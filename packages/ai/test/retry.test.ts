@@ -29,6 +29,22 @@ describe("provider retry classification", () => {
 		).toBe(false);
 	});
 
+	it("matches gateway timeout status errors without response bodies", () => {
+		expect(
+			isRetryableAssistantError(
+				fauxAssistantMessage("", { stopReason: "error", errorMessage: "524 status code (no body)" }),
+			),
+		).toBe(true);
+		expect(
+			isRetryableAssistantError(
+				fauxAssistantMessage("", {
+					stopReason: "error",
+					errorMessage: "OpenAI API error (524): 524 status code (no body)",
+				}),
+			),
+		).toBe(true);
+	});
+
 	it("classifies assistant error messages", () => {
 		expect(
 			isRetryableAssistantError(fauxAssistantMessage("", { stopReason: "error", errorMessage: "overloaded_error" })),
