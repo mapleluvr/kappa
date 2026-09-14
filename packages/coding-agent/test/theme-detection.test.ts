@@ -1,4 +1,4 @@
-import { type RgbColor, resetCapabilitiesCache, setCapabilities } from "@earendil-works/pi-tui";
+import { type RgbColor, resetCapabilitiesCache, setCapabilities } from "@mapleluvr/kappa-tui";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	detectTerminalBackgroundFromEnv,

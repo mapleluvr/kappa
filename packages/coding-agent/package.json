@@ -1,5 +1,5 @@
 {
-	"name": "@earendil-works/pi-coding-agent",
+	"name": "@mapleluvr/kappa-coding-agent",
 	"version": "0.85.1",
 	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
 	"type": "module",
@@ -52,7 +52,7 @@
 		"@earendil-works/chord": "^0.85.1",
 		"@earendil-works/pi-agent-core": "^0.85.1",
 		"@earendil-works/pi-ai": "^0.85.1",
-		"@earendil-works/pi-tui": "^0.85.1",
+		"@mapleluvr/kappa-tui": "0.85.1",
 		"@silvia-odwyer/photon-node": "0.3.4",
 		"chalk": "5.6.2",
 		"cross-spawn": "7.0.6",
@@ -101,7 +101,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/earendil-works/pi.git",
+		"url": "git+https://github.com/mapleluvr/kappa.git",
 		"directory": "packages/coding-agent"
 	},
 	"engines": {

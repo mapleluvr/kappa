@@ -11,8 +11,8 @@
  */
 
 import { StringEnum } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { matchesKey, Text, truncateToWidth } from "@earendil-works/pi-tui";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@mapleluvr/kappa-coding-agent";
+import { matchesKey, Text, truncateToWidth } from "@mapleluvr/kappa-tui";
 import { Type } from "typebox";
 
 interface Todo {

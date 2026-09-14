@@ -1,18 +1,18 @@
 {
-	"name": "@earendil-works/pi-coding-agent",
+	"name": "@mapleluvr/kappa-coding-agent",
 	"version": "0.85.1",
 	"lockfileVersion": 3,
 	"requires": true,
 	"packages": {
 		"": {
-			"name": "@earendil-works/pi-coding-agent",
+			"name": "@mapleluvr/kappa-coding-agent",
 			"version": "0.85.1",
 			"license": "MIT",
 			"dependencies": {
 				"@earendil-works/chord": "^0.85.1",
 				"@earendil-works/pi-agent-core": "^0.85.1",
 				"@earendil-works/pi-ai": "^0.85.1",
-				"@earendil-works/pi-tui": "^0.85.1",
+				"@mapleluvr/kappa-tui": "0.85.1",
 				"@silvia-odwyer/photon-node": "0.3.4",
 				"chalk": "5.6.2",
 				"cross-spawn": "7.0.6",
@@ -531,18 +531,6 @@
 				"node": ">=22.19.0"
 			}
 		},
-		"node_modules/@earendil-works/pi-tui": {
-			"version": "0.85.1",
-			"resolved": "https://registry.npmjs.org/@earendil-works/pi-tui/-/pi-tui-0.85.1.tgz",
-			"license": "MIT",
-			"dependencies": {
-				"get-east-asian-width": "1.6.0",
-				"marked": "18.0.5"
-			},
-			"engines": {
-				"node": ">=22.19.0"
-			}
-		},
 		"node_modules/@esbuild/aix-ppc64": {
 			"version": "0.28.1",
 			"resolved": "https://registry.npmjs.org/@esbuild/aix-ppc64/-/aix-ppc64-0.28.1.tgz",
@@ -982,6 +970,18 @@
 				"node": ">=20.0.0"
 			},
 			"hasInstallScript": true
+		},
+		"node_modules/@mapleluvr/kappa-tui": {
+			"version": "0.85.1",
+			"resolved": "https://registry.npmjs.org/@mapleluvr/kappa-tui/-/kappa-tui-0.85.1.tgz",
+			"license": "MIT",
+			"dependencies": {
+				"get-east-asian-width": "1.6.0",
+				"marked": "18.0.5"
+			},
+			"engines": {
+				"node": ">=22.19.0"
+			}
 		},
 		"node_modules/@nodable/entities": {
 			"version": "2.1.0",

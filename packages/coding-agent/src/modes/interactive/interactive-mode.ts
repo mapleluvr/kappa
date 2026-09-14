@@ -21,8 +21,8 @@ import type {
 	OverlayOptions,
 	SlashCommand,
 	TuiMainScreenRenderState,
-} from "@earendil-works/pi-tui";
-import * as TuiLayouts from "@earendil-works/pi-tui";
+} from "@mapleluvr/kappa-tui";
+import * as TuiLayouts from "@mapleluvr/kappa-tui";
 import {
 	CombinedAutocompleteProvider,
 	type Component,
@@ -41,7 +41,7 @@ import {
 	TuiAltScreen,
 	TuiMainScreen,
 	visibleWidth,
-} from "@earendil-works/pi-tui";
+} from "@mapleluvr/kappa-tui";
 import chalk from "chalk";
 import { spawn } from "child_process";
 import {

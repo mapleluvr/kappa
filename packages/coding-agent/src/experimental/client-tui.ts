@@ -18,7 +18,7 @@ import {
 	setKeybindings,
 	Text,
 	type TUI,
-} from "@earendil-works/pi-tui";
+} from "@mapleluvr/kappa-tui";
 import type { ClientCommand } from "../cli/experimental/commands/client.ts";
 import { getAgentDir } from "../config.ts";
 import { KeybindingsManager } from "../core/keybindings.ts";

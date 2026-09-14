@@ -10,7 +10,7 @@ import {
 	type SelectListLayoutOptions,
 	Spacer,
 	Text,
-} from "@earendil-works/pi-tui";
+} from "@mapleluvr/kappa-tui";
 import { getSelectListTheme, theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
 import { keyDisplayText } from "./keybinding-hints.ts";

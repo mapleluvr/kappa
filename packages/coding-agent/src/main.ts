@@ -7,7 +7,7 @@
 
 import { createInterface } from "node:readline";
 import { type ImageContent, modelsAreEqual } from "@earendil-works/pi-ai";
-import { setCapabilityOverrides } from "@earendil-works/pi-tui";
+import { setCapabilityOverrides } from "@mapleluvr/kappa-tui";
 import chalk from "chalk";
 import { type Args, type Mode, normalizeSessionName, parseArgs, printHelp } from "./cli/args.ts";
 import {

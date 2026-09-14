@@ -25,7 +25,7 @@ import {
 	TruncatedText,
 	TuiAltScreen,
 	VStack,
-} from "@earendil-works/pi-tui";
+} from "@mapleluvr/kappa-tui";
 import { getAgentDir } from "../../../config.ts";
 import { KeybindingsManager } from "../../../core/keybindings.ts";
 import { createAllToolRenderers } from "../../../core/tools/renderers/index.ts";

@@ -25,8 +25,8 @@ import {
 	getAgentDir,
 	getMarkdownTheme,
 	withFileMutationQueue,
-} from "@earendil-works/pi-coding-agent";
-import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
+} from "@mapleluvr/kappa-coding-agent";
+import { Container, Markdown, Spacer, Text } from "@mapleluvr/kappa-tui";
 import { Type } from "typebox";
 import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.ts";
 

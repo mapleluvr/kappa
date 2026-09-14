@@ -10,7 +10,7 @@ import {
 	Text,
 	type TUI,
 	type TuiMouseEvent,
-} from "@earendil-works/pi-tui";
+} from "@mapleluvr/kappa-tui";
 import type { ToolDefinition, ToolRenderContext, ToolRenderResultOptions } from "../../../core/extensions/types.ts";
 import type { Theme } from "../theme/theme.ts";
 

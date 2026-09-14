@@ -8,7 +8,7 @@ import {
 	type RgbColor,
 	type SelectListTheme,
 	type SettingsListTheme,
-} from "@earendil-works/pi-tui";
+} from "@mapleluvr/kappa-tui";
 import chalk from "chalk";
 import { getCustomThemesDir, getThemesDir } from "../../../config.ts";
 import type { SourceInfo } from "../../../core/source-info.ts";
@@ -737,7 +737,7 @@ export function getDefaultTheme(): string {
 // ============================================================================
 
 // Use globalThis to share theme across module loaders (tsx + jiti in dev mode)
-const THEME_KEY = Symbol.for("@earendil-works/pi-coding-agent:theme");
+const THEME_KEY = Symbol.for("@mapleluvr/kappa-coding-agent:theme");
 const THEME_KEY_OLD = Symbol.for("@mariozechner/pi-coding-agent:theme");
 
 // Export theme as a getter that reads from globalThis

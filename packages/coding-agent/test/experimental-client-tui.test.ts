@@ -20,7 +20,7 @@ import {
 	type LaneWatchEvent,
 	reduceLaneSnapshot,
 } from "@earendil-works/pi-agent-core";
-import { ProcessTerminal, TuiMainScreen } from "@earendil-works/pi-tui";
+import { ProcessTerminal, TuiMainScreen } from "@mapleluvr/kappa-tui";
 import { beforeAll, describe, expect, test, vi } from "vitest";
 import { type ClientTuiServer, ExperimentalClientTui } from "../src/experimental/client-tui.ts";
 import { createPresentationFacetData } from "../src/experimental/plugins/bundled.ts";
