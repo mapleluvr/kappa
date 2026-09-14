@@ -22,7 +22,7 @@ import {
 	type SimpleStreamOptions,
 	type ThinkingLevelMap,
 } from "@earendil-works/pi-ai/compat";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@mapleluvr/kappa-coding-agent";
 
 // =============================================================================
 // Constants
@@ -274,7 +274,7 @@ async function loginGitLab(callbacks: OAuthLoginCallbacks): Promise<OAuthCredent
 	};
 }
 
-async function refreshGitLabToken(credentials: OAuthCredentials): Promise<OAuthCredentials> {
+async function refreshGitLabToken(credentials: OAuthCredentials, signal: AbortSignal): Promise<OAuthCredentials> {
 	const response = await fetch(`${GITLAB_COM_URL}/oauth/token`, {
 		method: "POST",
 		headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -283,6 +283,7 @@ async function refreshGitLabToken(credentials: OAuthCredentials): Promise<OAuthC
 			grant_type: "refresh_token",
 			refresh_token: credentials.refresh,
 		}).toString(),
+		signal,
 	});
 	if (!response.ok) throw new Error(`Token refresh failed: ${await response.text()}`);
 	const data = (await response.json()) as {

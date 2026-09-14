@@ -1,5 +1,5 @@
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
-import { Container, Text } from "@earendil-works/pi-tui";
+import { Container, Text } from "@mapleluvr/kappa-tui";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentSessionEvent } from "../../../src/core/agent-session.ts";
 import type { ExtensionUIContext } from "../../../src/core/extensions/index.ts";
@@ -56,6 +56,8 @@ type LoadedResourcesContext = {
 		promptTemplates: [];
 		resourceLoader: {
 			getAgentsFiles: () => LoadedResourcesResult<{ agentsFiles: Array<{ path: string }> }>;
+			getSystemPromptSource: () => { path: string } | undefined;
+			getAppendSystemPromptSources: () => Array<{ path: string }>;
 			getSkills: () => LoadedResourcesResult<{ skills: [] }>;
 			getPrompts: () => LoadedResourcesResult<{ prompts: [] }>;
 			getThemes: () => LoadedResourcesResult<{ themes: [] }>;
@@ -230,6 +232,8 @@ function createLoadedResourcesContext(): LoadedResourcesContext {
 			promptTemplates: [],
 			resourceLoader: {
 				getAgentsFiles: () => ({ agentsFiles: [{ path: "/repo/AGENTS.md" }], diagnostics: [] }),
+				getSystemPromptSource: () => undefined,
+				getAppendSystemPromptSources: () => [],
 				getSkills: () => ({ skills: [], diagnostics: [] }),
 				getPrompts: () => ({ prompts: [], diagnostics: [] }),
 				getThemes: () => ({ themes: [], diagnostics: [] }),

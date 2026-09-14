@@ -4,7 +4,7 @@
 
 Extensions and custom tools can render custom TUI components for interactive user interfaces. This page covers the component system and available building blocks.
 
-**Source:** [`@earendil-works/pi-tui`](https://github.com/earendil-works/pi-mono/tree/main/packages/tui)
+**Source:** [`@mapleluvr/kappa-tui`](https://github.com/earendil-works/pi-mono/tree/main/packages/tui)
 
 ## Component Interface
 
@@ -14,6 +14,7 @@ All components implement:
 interface Component {
   render(width: number): string[];
   handleInput?(data: string): void;
+  handleMouse?(event: TuiMouseEvent): TuiMouseEventResult | undefined;
   wantsKeyRelease?: boolean;
   invalidate(): void;
 }
@@ -23,6 +24,7 @@ interface Component {
 |--------|-------------|
 | `render(width)` | Return array of strings (one per line). Each line **must not exceed `width`**. |
 | `handleInput?(data)` | Receive keyboard input when component has focus. |
+| `handleMouse?(event)` | Receive normalized pointer input in fullscreen mode. |
 | `wantsKeyRelease?` | If true, component receives key release events (Kitty protocol). Default: false. |
 | `invalidate()` | Clear cached render state. Called on theme changes. |
 
@@ -33,7 +35,7 @@ The TUI appends a full SGR reset and OSC 8 reset at the end of each rendered lin
 Components that display a text cursor and need IME (Input Method Editor) support should implement the `Focusable` interface:
 
 ```typescript
-import { CURSOR_MARKER, type Component, type Focusable } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, type Component, type Focusable } from "@mapleluvr/kappa-tui";
 
 class MyInput implements Component, Focusable {
   focused: boolean = false;  // Set by TUI when focus changes
@@ -52,14 +54,14 @@ When a `Focusable` component has focus, TUI:
 3. Positions the hardware terminal cursor at that location
 4. Shows the hardware cursor only when `showHardwareCursor` is enabled
 
-The cursor remains hidden by default. This keeps the fake cursor rendering, while still positioning the hardware cursor for terminals that track IME candidate windows with hidden cursors. Some terminals require a visible hardware cursor for IME positioning; enable it with `showHardwareCursor`, `setShowHardwareCursor(true)`, or `PI_HARDWARE_CURSOR=1`. The `Editor` and `Input` built-in components already implement this interface.
+The cursor remains hidden by default. This keeps the fake cursor rendering, while still positioning the hardware cursor for terminals that track IME candidate windows with hidden cursors. Some terminals require a visible hardware cursor for IME positioning; enable it with the renderer's `showHardwareCursor` constructor argument or `setShowHardwareCursor(true)`. Pi also maps `PI_HARDWARE_CURSOR=1` to this setting before it creates its renderer. The `Editor` and `Input` built-in components already implement this interface.
 
 ### Container Components with Embedded Inputs
 
 When a container component (dialog, selector, etc.) contains an `Input` or `Editor` child, the container must implement `Focusable` and propagate the focus state to the child. Otherwise, the hardware cursor won't be positioned correctly for IME input.
 
 ```typescript
-import { Container, type Focusable, Input } from "@earendil-works/pi-tui";
+import { Container, type Focusable, Input } from "@mapleluvr/kappa-tui";
 
 class SearchDialog extends Container implements Focusable {
   private searchInput: Input;
@@ -90,19 +92,32 @@ Without this propagation, typing with an IME (Chinese, Japanese, Korean, etc.) w
 
 ```typescript
 pi.on("session_start", async (_event, ctx) => {
-  const handle = ctx.ui.custom(myComponent);
-  // handle.requestRender() - trigger re-render
-  // handle.close() - restore normal UI
+  const result = await ctx.ui.custom<string | null>((tui, theme, keybindings, done) =>
+    new MyComponent({
+      theme,
+      keybindings,
+      onChange: () => tui.requestRender(),
+      onSelect: (value) => done(value),
+      onCancel: () => done(null),
+    })
+  );
 });
 ```
 
-**In custom tools** via `pi.ui.custom()`:
+**In custom tools** via `ctx.ui.custom()`:
 
 ```typescript
-async execute(toolCallId, params, onUpdate, ctx, signal) {
-  const handle = pi.ui.custom(myComponent);
-  // ...
-  handle.close();
+async execute(toolCallId, params, signal, onUpdate, ctx) {
+  const result = await ctx.ui.custom<string | null>((tui, theme, keybindings, done) =>
+    new MyComponent({
+      theme,
+      keybindings,
+      onChange: () => tui.requestRender(),
+      onSelect: (value) => done(value),
+      onCancel: () => done(null),
+    })
+  );
+  // Use result...
 }
 ```
 
@@ -188,10 +203,10 @@ See [overlay-qa-tests.ts](../examples/extensions/overlay-qa-tests.ts) for compre
 
 ## Built-in Components
 
-Import from `@earendil-works/pi-tui`:
+Import from `@mapleluvr/kappa-tui`:
 
 ```typescript
-import { Text, Box, Container, Spacer, Markdown } from "@earendil-works/pi-tui";
+import { Text, Box, Container, Spacer, Markdown } from "@mapleluvr/kappa-tui";
 ```
 
 ### Text
@@ -273,7 +288,7 @@ const image = new Image(
 Use `matchesKey()` for key detection:
 
 ```typescript
-import { matchesKey, Key } from "@earendil-works/pi-tui";
+import { matchesKey, Key } from "@mapleluvr/kappa-tui";
 
 handleInput(data: string) {
   if (matchesKey(data, Key.up)) {
@@ -294,12 +309,28 @@ handleInput(data: string) {
 - With modifiers: `Key.ctrl("c")`, `Key.shift("tab")`, `Key.alt("left")`, `Key.ctrlShift("p")`
 - String format also works: `"enter"`, `"ctrl+c"`, `"shift+tab"`, `"ctrl+shift+p"`
 
+## Mouse Input
+
+Fullscreen mode routes normalized press, release, click, move, drag, and wheel events to components and overlays. Return `{ handled: true }` to suppress default behavior, `capture: true` to retain drag/release ownership, `focus: true` to request keyboard focus, and `render: true` when a hover or release visibly changes the component. Press, click, drag, and wheel render by default; no-op move/release events do not.
+
+```typescript
+import { MouseRegion } from "@mapleluvr/kappa-tui";
+
+const clickable = new MouseRegion(content, (event) => {
+  if (event.type !== "click" || event.button !== "left") return undefined;
+  expanded = !expanded;
+  return { handled: true };
+});
+```
+
+Unhandled wheel input scrolls the nearest `ScrollView`; unhandled primary-button drags retain transcript selection. OSC 8 links take precedence over parent click regions. `Input`, `Editor`, `SelectList`, and `SettingsList` include fullscreen mouse behavior. Regular mode does not capture mouse input because the terminal owns its scrollback.
+
 ## Line Width
 
 **Critical:** Each line from `render()` must not exceed the `width` parameter.
 
 ```typescript
-import { visibleWidth, truncateToWidth } from "@earendil-works/pi-tui";
+import { visibleWidth, truncateToWidth } from "@mapleluvr/kappa-tui";
 
 render(width: number): string[] {
   // Truncate long lines
@@ -320,7 +351,7 @@ Example: Interactive selector
 import {
   matchesKey, Key,
   truncateToWidth, visibleWidth
-} from "@earendil-works/pi-tui";
+} from "@mapleluvr/kappa-tui";
 
 class MySelector {
   private items: string[];
@@ -374,24 +405,26 @@ Usage in an extension:
 ```typescript
 pi.registerCommand("pick", {
   description: "Pick an item",
-  handler: async (args, ctx) => {
+  handler: async (_args, ctx) => {
     const items = ["Option A", "Option B", "Option C"];
-    const selector = new MySelector(items);
-    
-    let handle: { close: () => void; requestRender: () => void };
-    
-    await new Promise<void>((resolve) => {
-      selector.onSelect = (item) => {
-        ctx.ui.notify(`Selected: ${item}`, "info");
-        handle.close();
-        resolve();
+    const selected = await ctx.ui.custom<string | null>((tui, _theme, _keybindings, done) => {
+      const selector = new MySelector(items);
+      selector.onSelect = done;
+      selector.onCancel = () => done(null);
+
+      return {
+        render: (width) => selector.render(width),
+        handleInput: (data) => {
+          selector.handleInput(data);
+          tui.requestRender();
+        },
+        invalidate: () => selector.invalidate(),
       };
-      selector.onCancel = () => {
-        handle.close();
-        resolve();
-      };
-      handle = ctx.ui.custom(selector);
     });
+
+    if (selected !== null) {
+      ctx.ui.notify(`Selected: ${selected}`, "info");
+    }
   }
 });
 ```
@@ -416,7 +449,7 @@ renderResult(result, options, theme, context) {
 
 | Category | Colors |
 |----------|--------|
-| General | `text`, `accent`, `muted`, `dim` |
+| General | `text`, `accent`, `muted`, `dim`, `searchMatchText` |
 | Status | `success`, `error`, `warning` |
 | Borders | `border`, `borderAccent`, `borderMuted` |
 | Messages | `userMessageText`, `customMessageText`, `customMessageLabel` |
@@ -424,18 +457,18 @@ renderResult(result, options, theme, context) {
 | Diffs | `toolDiffAdded`, `toolDiffRemoved`, `toolDiffContext` |
 | Markdown | `mdHeading`, `mdLink`, `mdLinkUrl`, `mdCode`, `mdCodeBlock`, `mdCodeBlockBorder`, `mdQuote`, `mdQuoteBorder`, `mdHr`, `mdListBullet` |
 | Syntax | `syntaxComment`, `syntaxKeyword`, `syntaxFunction`, `syntaxVariable`, `syntaxString`, `syntaxNumber`, `syntaxType`, `syntaxOperator`, `syntaxPunctuation` |
-| Thinking | `thinkingOff`, `thinkingMinimal`, `thinkingLow`, `thinkingMedium`, `thinkingHigh`, `thinkingXhigh` |
+| Thinking | `thinkingOff`, `thinkingMinimal`, `thinkingLow`, `thinkingMedium`, `thinkingHigh`, `thinkingXhigh`, `thinkingMax` |
 | Modes | `bashMode` |
 
 **Background colors** (`theme.bg(color, text)`):
 
-`selectedBg`, `userMessageBg`, `customMessageBg`, `toolPendingBg`, `toolSuccessBg`, `toolErrorBg`
+`selectedBg`, `searchMatchBg`, `userMessageBg`, `customMessageBg`, `toolPendingBg`, `toolSuccessBg`, `toolErrorBg`
 
 **For Markdown**, use `getMarkdownTheme()`:
 
 ```typescript
-import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
-import { Markdown } from "@earendil-works/pi-tui";
+import { getMarkdownTheme } from "@mapleluvr/kappa-coding-agent";
+import { Markdown } from "@mapleluvr/kappa-tui";
 
 renderResult(result, options, theme, context) {
   const mdTheme = getMarkdownTheme();
@@ -486,7 +519,7 @@ class CachedComponent {
 }
 ```
 
-Call `invalidate()` when state changes, then `handle.requestRender()` to trigger re-render.
+Call `invalidate()` when state changes, then use the injected `tui.requestRender()` to trigger re-render.
 
 ## Invalidation and Theme Changes
 
@@ -596,12 +629,12 @@ These patterns cover the most common UI needs in extensions. **Copy these patter
 
 ### Pattern 1: Selection Dialog (SelectList)
 
-For letting users pick from a list of options. Use `SelectList` from `@earendil-works/pi-tui` with `DynamicBorder` for framing.
+For letting users pick from a list of options. Use `SelectList` from `@mapleluvr/kappa-tui` with `DynamicBorder` for framing.
 
 ```typescript
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { DynamicBorder } from "@earendil-works/pi-coding-agent";
-import { Container, type SelectItem, SelectList, Text } from "@earendil-works/pi-tui";
+import type { ExtensionAPI } from "@mapleluvr/kappa-coding-agent";
+import { DynamicBorder } from "@mapleluvr/kappa-coding-agent";
+import { Container, type SelectItem, SelectList, Text } from "@mapleluvr/kappa-tui";
 
 pi.registerCommand("pick", {
   handler: async (_args, ctx) => {
@@ -659,7 +692,7 @@ pi.registerCommand("pick", {
 For operations that take time and should be cancellable. `BorderedLoader` shows a spinner and handles escape to cancel.
 
 ```typescript
-import { BorderedLoader } from "@earendil-works/pi-coding-agent";
+import { BorderedLoader } from "@mapleluvr/kappa-coding-agent";
 
 pi.registerCommand("fetch", {
   handler: async (_args, ctx) => {
@@ -688,11 +721,11 @@ pi.registerCommand("fetch", {
 
 ### Pattern 3: Settings/Toggles (SettingsList)
 
-For toggling multiple settings. Use `SettingsList` from `@earendil-works/pi-tui` with `getSettingsListTheme()`.
+For toggling multiple settings. Use `SettingsList` from `@mapleluvr/kappa-tui` with `getSettingsListTheme()`.
 
 ```typescript
-import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
-import { Container, type SettingItem, SettingsList, Text } from "@earendil-works/pi-tui";
+import { getSettingsListTheme } from "@mapleluvr/kappa-coding-agent";
+import { Container, type SettingItem, SettingsList, Text } from "@mapleluvr/kappa-tui";
 
 pi.registerCommand("settings", {
   handler: async (_args, ctx) => {
@@ -831,8 +864,8 @@ Token stats available via `ctx.sessionManager.getBranch()` and `ctx.model`.
 Replace the main input editor with a custom implementation. Useful for modal editing (vim), different keybindings (emacs), or specialized input handling.
 
 ```typescript
-import { CustomEditor, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import { CustomEditor, type ExtensionAPI } from "@mapleluvr/kappa-coding-agent";
+import { matchesKey, truncateToWidth } from "@mapleluvr/kappa-tui";
 
 type Mode = "normal" | "insert";
 
@@ -885,9 +918,9 @@ class VimEditor extends CustomEditor {
 
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
-    // Factory receives theme and keybindings from the app
+    // Factory receives the TUI, theme, and keybindings from the app
     ctx.ui.setEditorComponent((tui, theme, keybindings) =>
-      new VimEditor(theme, keybindings)
+      new VimEditor(tui, theme, keybindings)
     );
   });
 }
@@ -897,6 +930,7 @@ export default function (pi: ExtensionAPI) {
 
 - **Extend `CustomEditor`** (not base `Editor`) to get app keybindings (escape to abort, ctrl+d to exit, model switching, etc.)
 - **Call `super.handleInput(data)`** for keys you don't handle
+- **Working status**: custom editors keep the standalone working row by default. Pass `{ embedWorkingStatus: true }` as the fourth `CustomEditor` constructor argument to use the built-in editor-border spinner instead.
 - **Factory pattern**: `setEditorComponent` receives a factory function that gets `tui`, `theme`, and `keybindings`
 - **Pass `undefined`** to restore the default editor: `ctx.ui.setEditorComponent(undefined)`
 

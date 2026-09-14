@@ -16,16 +16,12 @@ See [examples/sdk/](../examples/sdk/) for working examples from minimal to full 
 ## Quick Start
 
 ```typescript
-import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, ModelRuntime, SessionManager } from "@mapleluvr/kappa-coding-agent";
 
-// Set up credential storage and model registry
-const authStorage = AuthStorage.create();
-const modelRegistry = ModelRegistry.create(authStorage);
-
+const modelRuntime = await ModelRuntime.create();
 const { session } = await createAgentSession({
   sessionManager: SessionManager.inMemory(),
-  authStorage,
-  modelRegistry,
+  modelRuntime,
 });
 
 session.subscribe((event) => {
@@ -40,7 +36,7 @@ await session.prompt("What files are in the current directory?");
 ## Installation
 
 ```bash
-npm install @earendil-works/pi-coding-agent
+npm install @mapleluvr/kappa-coding-agent
 ```
 
 The SDK is included in the main package. No separate installation needed.
@@ -54,7 +50,7 @@ The main factory function for a single `AgentSession`.
 `createAgentSession()` uses a `ResourceLoader` to supply extensions, skills, prompt templates, themes, and context files. If you do not provide one, it uses `DefaultResourceLoader` with standard discovery.
 
 ```typescript
-import { createAgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, SessionManager } from "@mapleluvr/kappa-coding-agent";
 
 // Minimal: defaults with DefaultResourceLoader
 const { session } = await createAgentSession();
@@ -132,7 +128,7 @@ import {
   createAgentSessionServices,
   getAgentDir,
   SessionManager,
-} from "@earendil-works/pi-coding-agent";
+} from "@mapleluvr/kappa-coding-agent";
 
 const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
   const services = await createAgentSessionServices({ cwd });
@@ -323,6 +319,9 @@ session.subscribe((event) => {
     case "compaction_end":
     case "auto_retry_start":
     case "auto_retry_end":
+    case "summarization_retry_scheduled":
+    case "summarization_retry_attempt_start":
+    case "summarization_retry_finished":
       break;
   }
 });
@@ -369,10 +368,16 @@ When you pass a custom `ResourceLoader`, `cwd` and `agentDir` no longer control 
 
 ```typescript
 import { getModel } from "@earendil-works/pi-ai";
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { ModelRuntime } from "@mapleluvr/kappa-coding-agent";
 
-const authStorage = AuthStorage.create();
-const modelRegistry = ModelRegistry.create(authStorage);
+const modelRuntime = await ModelRuntime.create();
+
+// create() restores cached catalogs but does not refresh them from pi.dev by default.
+// Opt in to a create-time network refresh and bound how long it may take:
+const refreshedRuntime = await ModelRuntime.create({
+  allowModelNetwork: true,
+  modelRefreshTimeoutMs: 15_000,
+});
 
 // Find specific built-in model (doesn't check if API key exists)
 const opus = getModel("anthropic", "claude-opus-4-5");
@@ -380,14 +385,14 @@ if (!opus) throw new Error("Model not found");
 
 // Find any model by provider/id, including custom models from models.json
 // (doesn't check if API key exists)
-const customModel = modelRegistry.find("my-provider", "my-model");
+const customModel = modelRuntime.getModel("my-provider", "my-model");
 
-// Get only models that have valid API keys configured
-const available = await modelRegistry.getAvailable();
+// Get only models that have valid authentication configured
+const available = await modelRuntime.getAvailable();
 
 const { session } = await createAgentSession({
   model: opus,
-  thinkingLevel: "medium", // off, minimal, low, medium, high, xhigh
+  thinkingLevel: "medium", // off, minimal, low, medium, high, xhigh, max
   
   // Models for cycling (Ctrl+P in interactive mode)
   scopedModels: [
@@ -395,8 +400,7 @@ const { session } = await createAgentSession({
     { model: haiku, thinkingLevel: "off" },
   ],
   
-  authStorage,
-  modelRegistry,
+  modelRuntime,
 });
 ```
 
@@ -405,24 +409,26 @@ If no model is provided:
 2. Uses default from settings
 3. Falls back to first available model
 
+Remote catalogs are persisted locally so later runtimes can restore them without a network request. The default file is `~/.pi/agent/models-store.json`; set `modelsStorePath` to choose another location, or inject `modelsStore` to control persistence. Network refreshes are throttled to once per provider every four hours unless forced. To force an immediate refresh, call `await modelRuntime.refresh({ allowNetwork: true, force: true, signal })`. Setting `PI_OFFLINE` disables model network access.
+
 To match CLI model parsing, use the exported resolver helpers:
 
 ```typescript
 import {
   resolveCliModel,
   resolveModelScopeWithDiagnostics,
-} from "@earendil-works/pi-coding-agent";
+} from "@mapleluvr/kappa-coding-agent";
 
 const cliModel = resolveCliModel({
   cliModel: "anthropic/claude-opus-4-5:high",
-  modelRegistry,
+  modelRuntime,
 });
 if (cliModel.error) throw new Error(cliModel.error);
 if (cliModel.warning) console.warn(cliModel.warning);
 
 const { scopedModels, diagnostics } = await resolveModelScopeWithDiagnostics(
   ["anthropic/*:high", "gpt-5"],
-  modelRegistry,
+  modelRuntime,
 );
 for (const diagnostic of diagnostics) {
   console.warn(diagnostic.message);
@@ -435,41 +441,60 @@ for (const diagnostic of diagnostics) {
 
 ### API Keys and OAuth
 
-API key resolution priority (handled by AuthStorage):
+Authentication resolution priority (handled by `ModelRuntime`):
 1. Runtime overrides (via `setRuntimeApiKey`, not persisted)
 2. Stored credentials in `auth.json` (API keys or OAuth tokens)
 3. Environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.)
 4. Fallback resolver (for custom provider keys from `models.json`)
 
 ```typescript
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
+import { createAgentSession, ModelRuntime } from "@mapleluvr/kappa-coding-agent";
 
 // Default: uses ~/.pi/agent/auth.json and ~/.pi/agent/models.json
-const authStorage = AuthStorage.create();
-const modelRegistry = ModelRegistry.create(authStorage);
+const modelRuntime = await ModelRuntime.create();
 
-const { session } = await createAgentSession({
-  sessionManager: SessionManager.inMemory(),
-  authStorage,
-  modelRegistry,
-});
+// Provider-owned auth methods and current status
+for (const provider of modelRuntime.getProviders()) {
+  const status = await modelRuntime.checkAuth(provider.id);
+  console.log(provider.name, provider.auth, status);
+}
 
 // Runtime API key override (not persisted to disk)
-authStorage.setRuntimeApiKey("anthropic", "sk-my-temp-key");
+await modelRuntime.setRuntimeApiKey("anthropic", "sk-my-temp-key");
 
-// Custom auth storage location
-const customAuth = AuthStorage.create("/my/app/auth.json");
-const customRegistry = ModelRegistry.create(customAuth, "/my/app/models.json");
-
-const { session } = await createAgentSession({
-  sessionManager: SessionManager.inMemory(),
-  authStorage: customAuth,
-  modelRegistry: customRegistry,
+// Custom credential and model locations
+const customRuntime = await ModelRuntime.create({
+  authPath: "/my/app/auth.json",
+  modelsPath: "/my/app/models.json",
 });
 
-// No custom models.json (built-in models only)
-const simpleRegistry = ModelRegistry.inMemory(authStorage);
+// Or inject any pi-ai CredentialStore
+const credentials = new InMemoryCredentialStore();
+const inMemoryRuntime = await ModelRuntime.create({ credentials });
+
+const { session } = await createAgentSession({
+  modelRuntime: customRuntime,
+});
 ```
+
+`login()`, `logout()`, `setRuntimeApiKey()`, and `removeRuntimeApiKey()` resolve after the affected provider's cached/built-in catalog, composition, and availability snapshot are locally consistent. They do not wait for remote catalog freshness. If credentials were committed but local synchronization fails, they reject with the exported `CredentialSynchronizationError`; inspect its `providerId`, `operation`, `credential`, and `cause` fields instead of retrying the credential mutation blindly.
+
+Public model/auth operations and `ModelRuntime.create({ signal })` accept optional abort signals and are unbounded when omitted. SDK applications own deadline policy for remote catalog freshness:
+
+```typescript
+const signal = AbortSignal.timeout(15_000);
+const result = await modelRuntime.refresh({
+  providers: ["anthropic"],
+  signal,
+});
+if (result.aborted) console.warn("Catalog refresh timed out; using cached models");
+for (const [providerId, error] of result.errors) {
+  console.warn(`Could not refresh ${providerId}:`, error);
+}
+```
+
+A failed or timed-out network refresh does not undo a successful credential operation. `refresh()` starts a new provider generation, so it does not wait behind an older stalled refresh and stale generations cannot publish afterward.
 
 > See [examples/sdk/09-api-keys-and-oauth.ts](../examples/sdk/09-api-keys-and-oauth.ts)
 
@@ -478,7 +503,7 @@ const simpleRegistry = ModelRegistry.inMemory(authStorage);
 Use a `ResourceLoader` to override the system prompt:
 
 ```typescript
-import { createAgentSession, DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, DefaultResourceLoader } from "@mapleluvr/kappa-coding-agent";
 
 const loader = new DefaultResourceLoader({
   systemPromptOverride: () => "You are a helpful assistant.",
@@ -494,7 +519,7 @@ const { session } = await createAgentSession({ resourceLoader: loader });
 
 Specify which built-in tools to enable:
 
-- Built-in tool names: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`
+- Built-in tool names: `read`, `bash`, `powershell`, `edit`, `write`, `grep`, `find`, `ls`
 - Default built-ins: `read`, `bash`, `edit`, `write`
 - `noTools: "all"` disables all tools
 - `noTools: "builtin"` disables default built-ins while keeping extension and custom tools enabled
@@ -503,7 +528,7 @@ Specify which built-in tools to enable:
 The `edit` tool returns `details.diff` for Pi's TUI display and `details.patch` as a standard unified patch for SDK consumers.
 
 ```typescript
-import { createAgentSession } from "@earendil-works/pi-coding-agent";
+import { createAgentSession } from "@mapleluvr/kappa-coding-agent";
 
 // Read-only mode
 const { session } = await createAgentSession({
@@ -513,6 +538,11 @@ const { session } = await createAgentSession({
 // Pick specific tools
 const { session } = await createAgentSession({
   tools: ["read", "bash", "grep"],
+});
+
+// Use PowerShell instead of Bash on Windows
+const { session } = await createAgentSession({
+  tools: ["read", "powershell", "edit", "write"],
 });
 
 // Disable one tool while keeping the rest available
@@ -526,7 +556,7 @@ const { session } = await createAgentSession({
 When you pass a custom `cwd`, `createAgentSession()` builds selected built-in tools for that cwd.
 
 ```typescript
-import { createAgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, SessionManager } from "@mapleluvr/kappa-coding-agent";
 
 const cwd = "/path/to/project";
 
@@ -550,7 +580,7 @@ const { session } = await createAgentSession({
 
 ```typescript
 import { Type } from "typebox";
-import { createAgentSession, defineTool } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, defineTool } from "@mapleluvr/kappa-coding-agent";
 
 // Inline custom tool
 const myTool = defineTool({
@@ -585,7 +615,7 @@ If you pass `tools`, include each custom or extension tool name you want enabled
 Extensions are loaded by the `ResourceLoader`. `DefaultResourceLoader` discovers extensions from `~/.pi/agent/extensions/`, `.pi/extensions/`, and settings.json extension sources.
 
 ```typescript
-import { createAgentSession, DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, DefaultResourceLoader } from "@mapleluvr/kappa-coding-agent";
 
 const loader = new DefaultResourceLoader({
   additionalExtensionPaths: ["/path/to/my-extension.ts"],
@@ -604,10 +634,31 @@ const { session } = await createAgentSession({ resourceLoader: loader });
 
 Extensions can register tools, subscribe to events, add commands, and more. See [extensions.md](extensions.md) for the full API.
 
+**Named inline extensions:** By default, inline factories display as `<inline:1>`, `<inline:2>`, etc. in the startup Extensions list. To show a descriptive name instead, wrap the factory:
+
+```typescript
+import type { InlineExtension } from "@mapleluvr/kappa-coding-agent";
+
+const myProvider: InlineExtension = {
+  name: "my-provider",
+  factory: (pi) => {
+    pi.on("agent_start", () => {
+      console.log("[my-provider] Agent starting");
+    });
+  },
+};
+
+const loader = new DefaultResourceLoader({
+  extensionFactories: [myProvider],
+});
+```
+
+This displays as `<inline:my-provider>` instead of `<inline:1>`. Bare factory functions are still accepted for backward compatibility.
+
 **Event Bus:** Extensions can communicate via `pi.events`. Pass a shared `eventBus` to `DefaultResourceLoader` if you need to emit or listen from outside:
 
 ```typescript
-import { createEventBus, DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
+import { createEventBus, DefaultResourceLoader } from "@mapleluvr/kappa-coding-agent";
 
 const eventBus = createEventBus();
 const loader = new DefaultResourceLoader({
@@ -627,7 +678,7 @@ import {
   createAgentSession,
   DefaultResourceLoader,
   type Skill,
-} from "@earendil-works/pi-coding-agent";
+} from "@mapleluvr/kappa-coding-agent";
 
 const customSkill: Skill = {
   name: "my-skill",
@@ -653,7 +704,7 @@ const { session } = await createAgentSession({ resourceLoader: loader });
 ### Context Files
 
 ```typescript
-import { createAgentSession, DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, DefaultResourceLoader } from "@mapleluvr/kappa-coding-agent";
 
 const loader = new DefaultResourceLoader({
   agentsFilesOverride: (current) => ({
@@ -677,7 +728,7 @@ import {
   createAgentSession,
   DefaultResourceLoader,
   type PromptTemplate,
-} from "@earendil-works/pi-coding-agent";
+} from "@mapleluvr/kappa-coding-agent";
 
 const customCommand: PromptTemplate = {
   name: "deploy",
@@ -712,7 +763,7 @@ import {
   createAgentSessionServices,
   getAgentDir,
   SessionManager,
-} from "@earendil-works/pi-coding-agent";
+} from "@mapleluvr/kappa-coding-agent";
 
 // In-memory (no persistence)
 const { session } = await createAgentSession({
@@ -735,6 +786,11 @@ if (modelFallbackMessage) {
 // Open specific file
 const { session: opened } = await createAgentSession({
   sessionManager: SessionManager.open("/path/to/session.jsonl"),
+});
+
+// Resume a session kept outside the filesystem, e.g. in a database
+const { session: restored } = await createAgentSession({
+  sessionManager: SessionManager.inMemory(process.cwd(), { id: sessionId }, entries),
 });
 
 // List sessions
@@ -806,7 +862,7 @@ sm.createBranchedSession(leafId);       // Extract path to new file
 ### Settings Management
 
 ```typescript
-import { createAgentSession, SettingsManager, SessionManager } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, SettingsManager, SessionManager } from "@mapleluvr/kappa-coding-agent";
 
 // Default: loads from files (global + project merged)
 const { session } = await createAgentSession({
@@ -862,7 +918,7 @@ Use `DefaultResourceLoader` to discover extensions, skills, prompts, themes, and
 import {
   DefaultResourceLoader,
   getAgentDir,
-} from "@earendil-works/pi-coding-agent";
+} from "@mapleluvr/kappa-coding-agent";
 
 const loader = new DefaultResourceLoader({
   cwd,
@@ -906,25 +962,21 @@ interface LoadExtensionsResult {
 import { getModel } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import {
-  AuthStorage,
   createAgentSession,
   DefaultResourceLoader,
   defineTool,
-  ModelRegistry,
+  ModelRuntime,
   SessionManager,
   SettingsManager,
-} from "@earendil-works/pi-coding-agent";
+} from "@mapleluvr/kappa-coding-agent";
 
-// Set up auth storage (custom location)
-const authStorage = AuthStorage.create("/custom/agent/auth.json");
-
-// Runtime API key override (not persisted)
+const modelRuntime = await ModelRuntime.create({
+  authPath: "/custom/agent/auth.json",
+  modelsPath: "/custom/agent/models.json",
+});
 if (process.env.MY_KEY) {
-  authStorage.setRuntimeApiKey("anthropic", process.env.MY_KEY);
+  await modelRuntime.setRuntimeApiKey("anthropic", process.env.MY_KEY);
 }
-
-// Model registry (no custom models.json)
-const modelRegistry = ModelRegistry.create(authStorage);
 
 // Inline tool
 const statusTool = defineTool({
@@ -961,8 +1013,7 @@ const { session } = await createAgentSession({
 
   model,
   thinkingLevel: "off",
-  authStorage,
-  modelRegistry,
+  modelRuntime,
 
   tools: ["read", "bash", "status"],
   customTools: [statusTool],
@@ -998,7 +1049,7 @@ import {
   getAgentDir,
   InteractiveMode,
   SessionManager,
-} from "@earendil-works/pi-coding-agent";
+} from "@mapleluvr/kappa-coding-agent";
 
 const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
   const services = await createAgentSessionServices({ cwd });
@@ -1038,7 +1089,7 @@ import {
   getAgentDir,
   runPrintMode,
   SessionManager,
-} from "@earendil-works/pi-coding-agent";
+} from "@mapleluvr/kappa-coding-agent";
 
 const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
   const services = await createAgentSessionServices({ cwd });
@@ -1075,7 +1126,7 @@ import {
   getAgentDir,
   runRpcMode,
   SessionManager,
-} from "@earendil-works/pi-coding-agent";
+} from "@mapleluvr/kappa-coding-agent";
 
 const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
   const services = await createAgentSessionServices({ cwd });
@@ -1128,8 +1179,9 @@ createAgentSessionRuntime
 AgentSessionRuntime
 
 // Auth and Models
-AuthStorage
-ModelRegistry
+ModelRuntime // implements pi-ai Models and owns credential storage
+ModelRegistry // synchronous extension compatibility facade
+CredentialSynchronizationError
 resolveCliModel
 resolveModelScopeWithDiagnostics
 
@@ -1154,13 +1206,14 @@ SettingsManager
 // Tool factories
 createCodingTools
 createReadOnlyTools
-createReadTool, createBashTool, createEditTool, createWriteTool
+createReadTool, createBashTool, createPowerShellTool, createEditTool, createWriteTool
 createGrepTool, createFindTool, createLsTool
 
 // Types
 type CreateAgentSessionOptions
 type CreateAgentSessionResult
 type ExtensionFactory
+type InlineExtension
 type ExtensionAPI
 type ToolDefinition
 type Skill
