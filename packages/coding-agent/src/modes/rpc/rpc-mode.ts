@@ -13,6 +13,7 @@
 
 import * as crypto from "node:crypto";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
+import { C2_EMPTY_LEAF_ID, type C2CallOptions } from "../../core/c2-ingress.ts";
 import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
@@ -56,6 +57,15 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	let session = runtimeHost.session;
 	let unsubscribe: (() => void) | undefined;
 	let unsubscribeBackpressure: (() => void) | undefined;
+	function inputOptions(command: Extract<RpcCommand, { type: "prompt" | "steer" | "follow_up" }>): C2CallOptions {
+		const record = command.id === undefined ? undefined : session.getC2Record(command.id, command.branchId);
+		return {
+			branchId: command.branchId ?? record?.branchId ?? session.sessionManager.getLeafId() ?? C2_EMPTY_LEAF_ID,
+			baseRevision: command.baseRevision ?? record?.baseRevision ?? session.sessionManager.getTreeRevision(),
+			requestId: command.id,
+			idempotencyKey: command.id,
+		};
+	}
 
 	const output = (obj: RpcResponse | RpcExtensionUIRequest | object) => {
 		writeRawStdout(serializeJsonLine(obj));
@@ -400,6 +410,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 						images: command.images,
 						streamingBehavior: command.streamingBehavior,
 						source: "rpc",
+						...inputOptions(command),
 						preflightResult: (didSucceed) => {
 							if (didSucceed) {
 								preflightSucceeded = true;
@@ -416,12 +427,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "steer": {
-				await session.steer(command.message, command.images);
+				await session.steer(command.message, command.images, inputOptions(command));
 				return success(id, "steer");
 			}
 
 			case "follow_up": {
-				await session.followUp(command.message, command.images);
+				await session.followUp(command.message, command.images, inputOptions(command));
 				return success(id, "follow_up");
 			}
 

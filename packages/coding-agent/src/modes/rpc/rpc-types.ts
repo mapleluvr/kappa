@@ -17,11 +17,19 @@ import type { SourceInfo } from "../../core/source-info.ts";
 // RPC Commands (stdin)
 // ============================================================================
 
+type RpcInputIdentity = { branchId?: string; baseRevision?: number };
+
 export type RpcCommand =
-	// Prompting
-	| { id?: string; type: "prompt"; message: string; images?: ImageContent[]; streamingBehavior?: "steer" | "followUp" }
-	| { id?: string; type: "steer"; message: string; images?: ImageContent[] }
-	| { id?: string; type: "follow_up"; message: string; images?: ImageContent[] }
+	// Prompting: id is also the C2 idempotency key within the admission branch.
+	| ({
+			id?: string;
+			type: "prompt";
+			message: string;
+			images?: ImageContent[];
+			streamingBehavior?: "steer" | "followUp";
+	  } & RpcInputIdentity)
+	| ({ id?: string; type: "steer"; message: string; images?: ImageContent[] } & RpcInputIdentity)
+	| ({ id?: string; type: "follow_up"; message: string; images?: ImageContent[] } & RpcInputIdentity)
 	| { id?: string; type: "abort" }
 	| { id?: string; type: "clear_queue" }
 	| { id?: string; type: "new_session"; parentSession?: string }

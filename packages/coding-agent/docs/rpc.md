@@ -11,6 +11,7 @@ pi --mode rpc [options]
 ```
 
 Common options:
+
 - `--provider <name>`: Set the LLM provider (anthropic, openai, google, etc.)
 - `--model <pattern>`: Model pattern or ID (supports `provider/id` and optional `:<thinking>`)
 - `--name <name>` / `-n <name>`: Set the session display name at startup
@@ -30,6 +31,7 @@ All commands support an optional `id` field for request/response correlation. If
 RPC mode uses strict JSONL semantics with LF (`\n`) as the only record delimiter.
 
 This matters for clients:
+
 - Split records on `\n` only
 - Accept optional `\r\n` input by stripping a trailing `\r`
 - Do not use generic line readers that treat Unicode separators as newlines
@@ -40,6 +42,14 @@ In particular, Node `readline` is not protocol-compliant for RPC mode because it
 
 ### Prompting
 
+#### Kappa C2 Identity
+
+For `prompt`, `steer`, and `follow_up`, a supplied `id` is both the request correlation ID and the C2 idempotency key. An accepted submission binds it to the current session, admission-time branch, and tree revision. Repeating the same command in the same RPC session reuses that live admission even after a successful write moves the leaf. A committed identical intent returns `replayed: true` without another write; a pending or changed intent with the same identity is refused. Refused or released inputs do not retain retry identity: a later retry uses the current branch and revision unless the client supplies them explicitly.
+
+Optional `branchId` and `baseRevision` fields let a client submit an explicit identity. New admissions must match the current leaf and tree revision. Committed replays are checked before this revision comparison. Use a new `id` for a new intent, or explicitly select another branch; the underlying scope is `sessionId + branchId + idempotencyKey`. Commands without an `id` receive fresh identities and have no replay guarantee.
+
+These records and the tree revision are local to the live `AgentSession`. They do not establish replay or revision continuity across process restart or session replacement. `clear_queue` releases only removed messages, while messages already drained for execution retain their admissions. `abort` waits for the owning write paths to settle without releasing their admissions early.
+
 #### prompt
 
 Send a user prompt to the agent. The command response is emitted after the prompt is accepted, queued, or handled. Events continue streaming asynchronously after acceptance.
@@ -49,6 +59,7 @@ Send a user prompt to the agent. The command response is emitted after the promp
 ```
 
 With images:
+
 ```json
 {"type": "prompt", "message": "What's in this image?", "images": [{"type": "image", "data": "base64-encoded-data", "mimeType": "image/png"}]}
 ```
@@ -69,6 +80,7 @@ If the agent is streaming and no `streamingBehavior` is specified, the command r
 **Input expansion**: Skill commands (`/skill:name`) and prompt templates (`/template`) are expanded before sending/queueing.
 
 Response:
+
 ```json
 {"id": "req-1", "type": "response", "command": "prompt", "success": true}
 ```
@@ -86,6 +98,7 @@ Queue a steering message while the agent is running. It is delivered after the c
 ```
 
 With images:
+
 ```json
 {"type": "steer", "message": "Look at this instead", "images": [{"type": "image", "data": "base64-encoded-data", "mimeType": "image/png"}]}
 ```
@@ -93,6 +106,7 @@ With images:
 The `images` field is optional. Each image uses `ImageContent` format (same as `prompt`).
 
 Response:
+
 ```json
 {"type": "response", "command": "steer", "success": true}
 ```
@@ -108,6 +122,7 @@ Queue a follow-up message to be processed after the agent finishes. Delivered on
 ```
 
 With images:
+
 ```json
 {"type": "follow_up", "message": "Also check this image", "images": [{"type": "image", "data": "base64-encoded-data", "mimeType": "image/png"}]}
 ```
@@ -115,6 +130,7 @@ With images:
 The `images` field is optional. Each image uses `ImageContent` format (same as `prompt`).
 
 Response:
+
 ```json
 {"type": "response", "command": "follow_up", "success": true}
 ```
@@ -130,6 +146,7 @@ Abort the current operation and wait for the session to become idle before respo
 ```
 
 Response:
+
 ```json
 {"type": "response", "command": "abort", "success": true}
 ```
@@ -143,6 +160,7 @@ Remove queued steering and follow-up messages and return their text.
 ```
 
 Response:
+
 ```json
 {
   "type": "response",
@@ -166,16 +184,19 @@ Start a fresh session. Can be cancelled by a `session_before_switch` extension e
 ```
 
 With optional parent session tracking:
+
 ```json
 {"type": "new_session", "parentSession": "/path/to/parent-session.jsonl"}
 ```
 
 Response:
+
 ```json
 {"type": "response", "command": "new_session", "success": true, "data": {"cancelled": false}}
 ```
 
 If an extension cancelled:
+
 ```json
 {"type": "response", "command": "new_session", "success": true, "data": {"cancelled": true}}
 ```
@@ -191,6 +212,7 @@ Get current session state.
 ```
 
 Response:
+
 ```json
 {
   "type": "response",
@@ -224,6 +246,7 @@ Get all messages in the conversation.
 ```
 
 Response:
+
 ```json
 {
   "type": "response",
@@ -246,6 +269,7 @@ Switch to a specific model.
 ```
 
 Response contains the full [Model](#model) object:
+
 ```json
 {
   "type": "response",
@@ -264,6 +288,7 @@ Cycle to the next available model. Returns `null` data if only one model availab
 ```
 
 Response:
+
 ```json
 {
   "type": "response",
@@ -288,6 +313,7 @@ List all configured models.
 ```
 
 Response contains an array of full [Model](#model) objects:
+
 ```json
 {
   "type": "response",
@@ -314,6 +340,7 @@ Levels: `"off"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"`, `"max"`
 `"xhigh"` and `"max"` are exposed only when supported by the selected model. Some models, including GPT-5.6, expose both.
 
 Response:
+
 ```json
 {"type": "response", "command": "set_thinking_level", "success": true}
 ```
@@ -327,6 +354,7 @@ Cycle through available thinking levels. Returns `null` data if model doesn't su
 ```
 
 Response:
+
 ```json
 {
   "type": "response",
@@ -345,6 +373,7 @@ List the thinking levels supported by the current model. Returns `["off"]` for a
 ```
 
 Response:
+
 ```json
 {
   "type": "response",
@@ -367,10 +396,12 @@ Control how steering messages (from `steer`) are delivered.
 ```
 
 Modes:
+
 - `"all"`: Deliver all steering messages after the current assistant turn finishes executing its tool calls
 - `"one-at-a-time"`: Deliver one steering message per completed assistant turn (default)
 
 Response:
+
 ```json
 {"type": "response", "command": "set_steering_mode", "success": true}
 ```
@@ -384,10 +415,12 @@ Control how follow-up messages (from `follow_up`) are delivered.
 ```
 
 Modes:
+
 - `"all"`: Deliver all follow-up messages when agent finishes
 - `"one-at-a-time"`: Deliver one follow-up message per agent completion (default)
 
 Response:
+
 ```json
 {"type": "response", "command": "set_follow_up_mode", "success": true}
 ```
@@ -403,11 +436,13 @@ Manually compact conversation context to reduce token usage.
 ```
 
 With custom instructions:
+
 ```json
 {"type": "compact", "customInstructions": "Focus on code changes"}
 ```
 
 Response:
+
 ```json
 {
   "type": "response",
@@ -442,6 +477,7 @@ Enable or disable automatic compaction when context is nearly full.
 ```
 
 Response:
+
 ```json
 {"type": "response", "command": "set_auto_compaction", "success": true}
 ```
@@ -457,6 +493,7 @@ Enable or disable automatic retry on transient errors (overloaded, rate limit, 5
 ```
 
 Response:
+
 ```json
 {"type": "response", "command": "set_auto_retry", "success": true}
 ```
@@ -470,6 +507,7 @@ Abort an in-progress retry (cancel the delay and stop retrying).
 ```
 
 Response:
+
 ```json
 {"type": "response", "command": "abort_retry", "success": true}
 ```
@@ -487,6 +525,7 @@ Execute a shell command and add output to conversation context. Output streams a
 Include an `id` to associate streamed `bash_execution_update` events with this command.
 
 Response:
+
 ```json
 {
   "id": "req-1",
@@ -503,6 +542,7 @@ Response:
 ```
 
 If output was truncated, includes `fullOutputPath`:
+
 ```json
 {
   "type": "response",
@@ -533,6 +573,7 @@ drwxr-xr-x ...
 ````
 
 This means:
+
 1. Bash output is included in the LLM context on the **next prompt**, not immediately
 2. Multiple bash commands can be executed before a prompt; all outputs will be included
 
@@ -545,6 +586,7 @@ Abort a running bash command.
 ```
 
 Response:
+
 ```json
 {"type": "response", "command": "abort_bash", "success": true}
 ```
@@ -560,6 +602,7 @@ Get token usage, cost statistics, and current context window usage.
 ```
 
 Response:
+
 ```json
 {
   "type": "response",
@@ -603,11 +646,13 @@ Export session to an HTML file.
 ```
 
 With custom path:
+
 ```json
 {"type": "export_html", "outputPath": "/tmp/session.html"}
 ```
 
 Response:
+
 ```json
 {
   "type": "response",
@@ -626,11 +671,13 @@ Load a different session file. Can be cancelled by a `session_before_switch` ext
 ```
 
 Response:
+
 ```json
 {"type": "response", "command": "switch_session", "success": true, "data": {"cancelled": false}}
 ```
 
 If an extension cancelled the switch:
+
 ```json
 {"type": "response", "command": "switch_session", "success": true, "data": {"cancelled": true}}
 ```
@@ -644,6 +691,7 @@ Create a new fork from a previous user message on the active branch. Can be canc
 ```
 
 Response:
+
 ```json
 {
   "type": "response",
@@ -654,6 +702,7 @@ Response:
 ```
 
 If an extension cancelled the fork:
+
 ```json
 {
   "type": "response",
@@ -672,6 +721,7 @@ Duplicate the current active branch into a new session at the current position. 
 ```
 
 Response:
+
 ```json
 {
   "type": "response",
@@ -682,6 +732,7 @@ Response:
 ```
 
 If an extension cancelled the clone:
+
 ```json
 {
   "type": "response",
@@ -700,6 +751,7 @@ Get user messages available for forking.
 ```
 
 Response:
+
 ```json
 {
   "type": "response",
@@ -723,11 +775,13 @@ Get all session entries in append order (excluding the session header). The sess
 ```
 
 With a cursor:
+
 ```json
 {"type": "get_entries", "since": "abc123"}
 ```
 
 Response:
+
 ```json
 {
   "type": "response",
@@ -753,6 +807,7 @@ Get the session as a tree of entries. Each node is `{entry, children, label?, la
 ```
 
 Response:
+
 ```json
 {
   "type": "response",
@@ -781,6 +836,7 @@ Get the text content of the last assistant message.
 ```
 
 Response:
+
 ```json
 {
   "type": "response",
@@ -801,6 +857,7 @@ Set a display name for the current session. The name appears in session listings
 ```
 
 Response:
+
 ```json
 {
   "type": "response",
@@ -822,6 +879,7 @@ Get available commands (extension commands, prompt templates, and skills). These
 ```
 
 Response:
+
 ```json
 {
   "type": "response",
@@ -838,6 +896,7 @@ Response:
 ```
 
 Each command has:
+
 - `name`: Command name (invoke with `/name`)
 - `description`: Human-readable description (optional for extension commands)
 - `source`: What kind of command:
@@ -859,7 +918,8 @@ Events are streamed to stdout as JSON lines during agent operation. Events do no
 ### Event Types
 
 | Event | Description |
-|-------|-------------|
+| ------- | ------------- |
+| `c2_result` | C2 admission, refusal, or committed replay with request identity |
 | `agent_start` | Agent begins processing |
 | `agent_end` | One low-level agent run completes (may still be followed by retry, compaction, or queued continuations) |
 | `agent_settled` | Agent run is fully settled; no automatic retry, compaction retry, or queued continuation remains |
@@ -881,6 +941,12 @@ Events are streamed to stdout as JSON lines during agent operation. Events do no
 | `summarization_retry_attempt_start` | Retried summarization request starts |
 | `summarization_retry_finished` | Summarization retry loop completes |
 | `extension_error` | Extension threw an error |
+
+### c2_result
+
+Emitted when C2 checks a user input, native tool operation, or tree-control intent. The `result` is a [`C2Result`](../src/core/c2-ingress.ts). Accepted results carry `record.requestId`, `record.sessionId`, `record.branchId`, `record.baseRevision`, provenance, and `replayed`; refused results carry a code and `sideEffect: "none"` for the rejected action. Native tools may already have prior effects from earlier accepted operations.
+
+An accepted result with `replayed: false` records admission before execution. It is not a persistence receipt, completion event, or capability verdict. Normal message and settlement events still describe execution. A committed replay has `replayed: true` and performs no additional write.
 
 ### agent_start
 
@@ -961,7 +1027,7 @@ Emitted during streaming of assistant messages. Contains a delta event without a
 The `assistantMessageEvent` field contains one of these delta types:
 
 | Type | Description |
-|------|-------------|
+| ------ | ------------- |
 | `text_start` | Text content block started |
 | `text_delta` | Text content chunk |
 | `text_end` | Text content block ended |
@@ -973,6 +1039,7 @@ The `assistantMessageEvent` field contains one of these delta types:
 | `toolcall_end` | Tool call ended (includes full `toolCall` object) |
 
 Example streaming a text response:
+
 ```json
 {"type":"message_update","usage":{...},"assistantMessageEvent":{"type":"text_start","contentIndex":0}}
 {"type":"message_update","usage":{...},"assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"Hello"}}
@@ -984,6 +1051,7 @@ The top-level `usage` field contains the latest cumulative provider-reported usa
 zero until completion when a provider does not report usage during streaming.
 
 Example starting a tool call:
+
 ```json
 {"type":"message_update","usage":{...},"assistantMessageEvent":{"type":"toolcall_start","contentIndex":1,"id":"call_abc123","toolName":"write"}}
 ```
@@ -1129,6 +1197,7 @@ Emitted when automatic retry is triggered after a transient error (overloaded, r
 ```
 
 On final failure (max retries exceeded):
+
 ```json
 {
   "type": "auto_retry_end",
@@ -1193,6 +1262,7 @@ There are two categories of extension UI methods:
 If a dialog method includes a `timeout` field, the agent-side will auto-resolve with a default value when the timeout expires. The client does not need to track timeouts.
 
 Some `ExtensionUIContext` methods are not supported or degraded in RPC mode because they require direct TUI access:
+
 - `custom()` returns `undefined`
 - `setWorkingMessage()`, `setWorkingIndicator()`, `setFooter()`, `setHeader()`, `setEditorComponent()`, `setToolsExpanded()` are no-ops
 - `getEditorText()` returns `""`
@@ -1400,6 +1470,7 @@ Parse errors:
 ## Types
 
 Source files:
+
 - [`packages/ai/src/types.ts`](../../ai/src/types.ts) - `Model`, `UserMessage`, `AssistantMessage`, `ToolResultMessage`
 - [`packages/agent/src/types.ts`](../../agent/src/types.ts) - `AgentMessage`, `AgentEvent`
 - [`src/core/messages.ts`](../src/core/messages.ts) - `BashExecutionMessage`

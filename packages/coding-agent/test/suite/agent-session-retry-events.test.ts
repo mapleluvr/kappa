@@ -7,6 +7,9 @@ import { createHarness, type Harness } from "./harness.ts";
 function normalizeEventOrder(events: Harness["events"]): string[] {
 	const normalized: string[] = [];
 	for (const event of events) {
+		if (event.type === "c2_result") {
+			continue;
+		}
 		const label =
 			event.type === "message_start" || event.type === "message_end"
 				? `${event.type}:${event.message.role}`
