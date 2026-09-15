@@ -170,22 +170,169 @@ async function createRuntimeHost(options: { withAuth: boolean; responseDelayMs: 
 
 async function startRpcMode(options: { withAuth: boolean; responseDelayMs: number; model?: Model<any> }): Promise<{
 	lineHandler: (line: string) => void;
+	session: AgentSession;
 	cleanup: () => Promise<void>;
 }> {
 	rpcIo.outputLines = [];
 	rpcIo.lineHandler = undefined;
 
 	const { runtimeHost, cleanup } = await createRuntimeHost(options);
+	const signalListeners = new Map(
+		(["SIGTERM", "SIGHUP"] as const).map((signal) => [signal, process.listeners(signal)]),
+	);
+	const endListeners = process.stdin.listeners("end");
 	void runRpcMode(runtimeHost);
 	await vi.waitFor(() => expect(rpcIo.lineHandler).toBeDefined());
 
-	return { lineHandler: rpcIo.lineHandler!, cleanup };
+	return {
+		lineHandler: rpcIo.lineHandler!,
+		session: runtimeHost.session,
+		cleanup: async () => {
+			try {
+				await cleanup();
+			} finally {
+				for (const [signal, previous] of signalListeners) {
+					for (const listener of process.listeners(signal)) {
+						if (!previous.includes(listener)) process.off(signal, listener);
+					}
+				}
+				for (const listener of process.stdin.listeners("end")) {
+					if (!endListeners.includes(listener)) process.stdin.off("end", listener as () => void);
+				}
+			}
+		},
+	};
 }
 
 describe("RPC prompt response semantics", () => {
 	afterEach(() => {
 		rpcIo.outputLines = [];
 		rpcIo.lineHandler = undefined;
+	});
+
+	it.each(["prompt", "steer", "follow_up"] as const)(
+		"replays the same RPC %s id after persistence moves the leaf",
+		async (type) => {
+			const { lineHandler, session, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 0 });
+			const command = { id: `replay-${type}`, type, message: "once" };
+			const responses = () =>
+				parseOutputLines(rpcIo.outputLines).filter(
+					(record) => record.id === command.id && record.type === "response",
+				);
+			try {
+				lineHandler(JSON.stringify(command));
+				await vi.waitFor(() => expect(responses()).toHaveLength(1));
+				if (type !== "prompt") {
+					lineHandler(JSON.stringify({ id: "drain", type: "prompt", message: "start" }));
+					await vi.waitFor(() => expect(getPromptResponses(rpcIo.outputLines, "drain")).toHaveLength(1));
+				}
+				await session.waitForIdle();
+				const entryIds = session.sessionManager.getEntries().map((entry) => entry.id);
+				const runCount = parseOutputLines(rpcIo.outputLines).filter(
+					(record) => record.type === "agent_start",
+				).length;
+				lineHandler(JSON.stringify(command));
+				await vi.waitFor(() => expect(responses()).toHaveLength(2));
+				await session.waitForIdle();
+				expect(responses()[1]).toMatchObject({ success: true });
+				expect(session.getC2Result(command.id)).toMatchObject({
+					status: "accepted",
+					replayed: true,
+					record: { idempotencyKey: command.id },
+				});
+				expect(session.sessionManager.getEntries().map((entry) => entry.id)).toEqual(entryIds);
+				expect(session.pendingMessageCount).toBe(0);
+				expect(parseOutputLines(rpcIo.outputLines).filter((record) => record.type === "agent_start")).toHaveLength(
+					runCount,
+				);
+			} finally {
+				await cleanup();
+			}
+		},
+	);
+
+	it("keeps the RPC admission identity after a conflicting retry", async () => {
+		const { lineHandler, session, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 0 });
+		const command = { id: "replay-conflict", type: "prompt", message: "once" };
+		try {
+			lineHandler(JSON.stringify(command));
+			await vi.waitFor(() => expect(getPromptResponses(rpcIo.outputLines, command.id)).toHaveLength(1));
+			await session.waitForIdle();
+			const entryIds = session.sessionManager.getEntries().map((entry) => entry.id);
+			lineHandler(JSON.stringify({ ...command, message: "different" }));
+			await vi.waitFor(() => expect(getPromptResponses(rpcIo.outputLines, command.id)).toHaveLength(2));
+			expect(getPromptResponses(rpcIo.outputLines, command.id)[1]).toMatchObject({ success: false });
+			lineHandler(JSON.stringify(command));
+			await vi.waitFor(() => expect(getPromptResponses(rpcIo.outputLines, command.id)).toHaveLength(3));
+			await session.waitForIdle();
+			expect(session.getC2Result(command.id)).toMatchObject({ status: "accepted", replayed: true });
+			expect(session.sessionManager.getEntries().map((entry) => entry.id)).toEqual(entryIds);
+		} finally {
+			await cleanup();
+		}
+	});
+
+	it.each(["steer", "follow_up"] as const)("re-admits a released RPC %s id after the leaf moves", async (type) => {
+		const { lineHandler, session, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 0 });
+		const command = { id: `released-${type}`, type, message: "retry after clear" };
+		const responses = () =>
+			parseOutputLines(rpcIo.outputLines).filter((record) => record.id === command.id && record.type === "response");
+		try {
+			lineHandler(JSON.stringify(command));
+			await vi.waitFor(() => expect(responses()).toHaveLength(1));
+			lineHandler(JSON.stringify({ id: "remove-queued", type: "clear_queue" }));
+			await vi.waitFor(() => expect(session.pendingMessageCount).toBe(0));
+			await session.prompt("move the leaf");
+			lineHandler(JSON.stringify(command));
+			await vi.waitFor(() => expect(responses()).toHaveLength(2));
+			expect(responses()[1]).toMatchObject({ success: true });
+			expect(session.pendingMessageCount).toBe(1);
+			await session.prompt("drain retry");
+			const users = session.sessionManager
+				.getEntries()
+				.flatMap((entry) => (entry.type === "message" && entry.message.role === "user" ? [entry.message] : []));
+			expect(users.filter((message) => JSON.stringify(message.content).includes(command.message))).toHaveLength(1);
+		} finally {
+			await cleanup();
+		}
+	});
+
+	it("re-admits an RPC prompt after streaming preflight releases its identity", async () => {
+		const { lineHandler, session, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 150 });
+		const command = { id: "preflight-retry", type: "prompt", message: "retry input" };
+		try {
+			lineHandler(JSON.stringify({ id: "active", type: "prompt", message: "in flight" }));
+			await vi.waitFor(() => expect(session.isStreaming).toBe(true));
+			lineHandler(JSON.stringify(command));
+			await vi.waitFor(() => expect(getPromptResponses(rpcIo.outputLines, command.id)).toHaveLength(1));
+			expect(getPromptResponses(rpcIo.outputLines, command.id)[0]).toMatchObject({ success: false });
+			await session.waitForIdle();
+			lineHandler(JSON.stringify(command));
+			await vi.waitFor(() => expect(getPromptResponses(rpcIo.outputLines, command.id)).toHaveLength(2));
+			expect(getPromptResponses(rpcIo.outputLines, command.id)[1]).toMatchObject({ success: true });
+			await session.waitForIdle();
+			expect(session.messages.filter((message) => message.role === "user")).toHaveLength(2);
+		} finally {
+			await cleanup();
+		}
+	});
+
+	it("does not pin a refused RPC id to an earlier leaf or revision", async () => {
+		const { lineHandler, session, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 0 });
+		const command = { id: "refused-retry", type: "prompt", message: "retry input" };
+		try {
+			lineHandler(JSON.stringify({ ...command, baseRevision: 999 }));
+			await vi.waitFor(() => expect(getPromptResponses(rpcIo.outputLines, command.id)).toHaveLength(1));
+			expect(session.getC2Result(command.id)).toMatchObject({ status: "refused", code: "revision_conflict" });
+			await session.prompt("move the leaf");
+			lineHandler(JSON.stringify(command));
+			await vi.waitFor(() => expect(getPromptResponses(rpcIo.outputLines, command.id)).toHaveLength(2));
+			expect(getPromptResponses(rpcIo.outputLines, command.id)[1]).toMatchObject({ success: true });
+			await session.waitForIdle();
+			expect(session.messages.filter((message) => message.role === "user")).toHaveLength(2);
+		} finally {
+			await cleanup();
+		}
 	});
 
 	it("emits one failure response when prompt preflight rejects", async () => {

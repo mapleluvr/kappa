@@ -25,7 +25,7 @@ import type {
 	PrepareNextTurnContext,
 	ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
-import { contentText } from "@earendil-works/pi-ai";
+import { contentText, uuidv7 } from "@earendil-works/pi-ai";
 import type {
 	AssistantMessage,
 	AuthResult,
@@ -53,6 +53,15 @@ import { sleep } from "../utils/sleep.ts";
 import { normalizeToolResultImages } from "../utils/tool-result-images.ts";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.ts";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.ts";
+import {
+	C2_EMPTY_LEAF_ID,
+	type C2Accepted,
+	type C2CallOptions,
+	C2Ingress,
+	type C2IngressRecord,
+	C2RefusedError,
+	type C2Result,
+} from "./c2-ingress.ts";
 import {
 	type CompactionPreparation,
 	type CompactionResult,
@@ -182,7 +191,8 @@ export type AgentSessionEvent =
 			reason: "manual" | "threshold" | "overflow";
 	  }
 	| { type: "summarization_retry_finished" }
-	| { type: "bash_execution_update"; id?: string; delta: string };
+	| { type: "bash_execution_update"; id?: string; delta: string }
+	| { type: "c2_result"; result: C2Result };
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -239,7 +249,7 @@ export interface ExtensionBindings {
 }
 
 /** Options for AgentSession.prompt() */
-export interface PromptOptions {
+export interface PromptOptions extends C2CallOptions {
 	/** Whether to dispatch extension commands and expand skill commands and prompt templates (default: true) */
 	expandPromptTemplates?: boolean;
 	/** Image attachments */
@@ -369,6 +379,12 @@ export class AgentSession {
 	private _extensionErrorUnsubscriber?: () => void;
 
 	private _modelRuntime: ModelRuntime;
+	private readonly _c2Ingress: C2Ingress;
+	private _lastC2Result: C2Result | undefined;
+	private readonly _c2ResultsByRequestId = new Map<string, C2Result>();
+	private readonly _c2OpenRecords: C2IngressRecord[] = [];
+	private readonly _c2MessageRecords = new Map<AgentMessage, C2IngressRecord>();
+	private readonly _c2ToolCallRecords = new Map<string, C2IngressRecord>();
 
 	// Tool registry for extension getTools/setTools
 	private _toolRegistry: Map<string, AgentTool> = new Map();
@@ -385,6 +401,9 @@ export class AgentSession {
 		this.agent = config.agent;
 		this.sessionManager = config.sessionManager;
 		this.settingsManager = config.settingsManager;
+		this._c2Ingress = new C2Ingress({
+			getCurrentRevision: (identity) => this._c2CurrentRevision(identity),
+		});
 		this._scopedModels = config.scopedModels ?? [];
 		this._resourceLoader = config.resourceLoader;
 		this._customTools = config.customTools ?? [];
@@ -485,24 +504,52 @@ export class AgentSession {
 	 */
 	private _installAgentToolHooks(): void {
 		this.agent.beforeToolCall = async ({ toolCall, args }) => {
-			const runner = this._extensionRunner;
-			if (!runner.hasHandlers("tool_call")) {
-				return undefined;
-			}
-
-			try {
-				return await runner.emitToolCall({
-					type: "tool_call",
-					toolName: toolCall.name,
+			const toolResult = this._c2Ingress.submit({
+				kind: "tool_result",
+				actor: "native",
+				requestId: uuidv7(),
+				sessionId: this.sessionId,
+				branchId: this._c2BranchId(),
+				baseRevision: this._c2CurrentRevision(),
+				source: { kind: "native_tool_execution", toolCallRef: toolCall.id },
+				cause: toolCall.id,
+				idempotencyKey: `tool-result:${toolCall.id}`,
+				payload: {
 					toolCallId: toolCall.id,
-					input: args as Record<string, unknown>,
-				});
-			} catch (err) {
-				if (err instanceof Error) {
-					throw err;
-				}
-				throw new Error(`Extension failed, blocking execution: ${String(err)}`);
+					toolName: toolCall.name,
+				},
+			});
+			this._publishC2Result(toolResult);
+			if (toolResult.status === "refused") {
+				return { block: true, reason: `C2 refused: ${toolResult.code}` };
 			}
+			if (toolResult.replayed) {
+				return { block: true, reason: "C2 replayed tool_result" };
+			}
+			this._c2OpenRecords.push(toolResult.record);
+			this._c2ToolCallRecords.set(toolCall.id, toolResult.record);
+			const runner = this._extensionRunner;
+			if (runner.hasHandlers("tool_call")) {
+				try {
+					const extensionResult = await runner.emitToolCall({
+						type: "tool_call",
+						toolName: toolCall.name,
+						toolCallId: toolCall.id,
+						input: args as Record<string, unknown>,
+					});
+					if (extensionResult?.block) {
+						this._c2Release(toolResult.record);
+						return extensionResult;
+					}
+				} catch (err) {
+					this._c2Release(toolResult.record);
+					if (err instanceof Error) {
+						throw err;
+					}
+					throw new Error(`Extension failed, blocking execution: ${String(err)}`);
+				}
+			}
+			return undefined;
 		};
 
 		this.agent.afterToolCall = async ({ toolCall, args, result, isError }) => {
@@ -685,8 +732,8 @@ export class AgentSession {
 				event.message.role === "assistant" ||
 				event.message.role === "toolResult"
 			) {
-				// Regular LLM message - persist as SessionMessageEntry
 				this.sessionManager.appendMessage(event.message);
+				this._c2CommitPersisted(event.message);
 			}
 			// Other message types (bashExecution, compactionSummary, branchSummary) are persisted elsewhere
 
@@ -750,7 +797,7 @@ export class AgentSession {
 	}
 
 	private _replaceMessageInPlace(target: AgentMessage, replacement: AgentMessage): void {
-		// Agent-core stores the finalized message object in its state before emitting message_end.
+		// SAFETY: Agent-core stores the finalized message object in its state before emitting message_end.
 		// SessionManager persistence happens later in _handleAgentEvent() with event.message.
 		// Mutating this object in place keeps agent state, later turn/agent events, listeners,
 		// and the eventual SessionManager.appendMessage(event.message) persistence in sync.
@@ -758,6 +805,7 @@ export class AgentSession {
 			return;
 		}
 
+		// SAFETY: the message object is a shared mutable record; keys must be replaced in place.
 		const targetRecord = target as unknown as Record<string, unknown>;
 		for (const key of Object.keys(targetRecord)) {
 			delete targetRecord[key];
@@ -1018,6 +1066,126 @@ export class AgentSession {
 		return this.sessionManager.getSessionId();
 	}
 
+	/** Latest C2 ingress result for this session, if any. */
+	get lastC2Result(): C2Result | undefined {
+		return this._lastC2Result;
+	}
+
+	/** C2 result for a specific requestId, if one was published. */
+	getC2Result(requestId: string): C2Result | undefined {
+		return this._c2ResultsByRequestId.get(requestId);
+	}
+
+	/** Live C2 admission used by RPC to recover retry identity; released inputs are absent. */
+	getC2Record(idempotencyKey: string, branchId?: string): C2IngressRecord | undefined {
+		return this._c2Ingress.getRecord({ sessionId: this.sessionId, branchId, idempotencyKey });
+	}
+
+	private _c2BranchId(): string {
+		return this.sessionManager.getLeafId() ?? C2_EMPTY_LEAF_ID;
+	}
+
+	private _c2CurrentRevision(identity?: { sessionId: string; branchId: string }): number {
+		const currentBranchId = this._c2BranchId();
+		if (identity !== undefined && (identity.sessionId !== this.sessionId || identity.branchId !== currentBranchId)) {
+			return -1;
+		}
+		return this.sessionManager.getTreeRevision();
+	}
+
+	private _publishC2Result(result: C2Result): C2Result {
+		this._lastC2Result = result;
+		const requestId = result.status === "accepted" ? result.record.requestId : result.requestId;
+		if (requestId) {
+			this._c2ResultsByRequestId.set(requestId, result);
+		}
+		this._emit({ type: "c2_result", result });
+		return result;
+	}
+
+	private _applyC2Result(result: C2Result): C2Accepted {
+		this._publishC2Result(result);
+		if (result.status === "refused") {
+			throw new C2RefusedError(result);
+		}
+		return result;
+	}
+
+	private _c2Untrack(record: C2IngressRecord): void {
+		const index = this._c2OpenRecords.indexOf(record);
+		if (index >= 0) {
+			this._c2OpenRecords.splice(index, 1);
+		}
+		for (const [message, bound] of this._c2MessageRecords) {
+			if (bound === record) {
+				this._c2MessageRecords.delete(message);
+			}
+		}
+		for (const [toolCallId, bound] of this._c2ToolCallRecords) {
+			if (bound === record) {
+				this._c2ToolCallRecords.delete(toolCallId);
+			}
+		}
+	}
+
+	private _c2Commit(record: C2IngressRecord): void {
+		this._c2Ingress.commit(record);
+		this._c2Untrack(record);
+	}
+
+	/** Commit an admission that was consumed without a transcript write. */
+	private _c2Consume(record: C2IngressRecord): void {
+		this._c2Commit(record);
+	}
+
+	private _c2Release(record: C2IngressRecord): void {
+		this._c2Ingress.release(record);
+		this._c2Untrack(record);
+	}
+
+	private _c2BindMessage(record: C2IngressRecord, message: AgentMessage): void {
+		this._c2MessageRecords.set(message, record);
+	}
+
+	private _c2CommitPersisted(message: AgentMessage): void {
+		const bound = this._c2MessageRecords.get(message);
+		if (bound) {
+			this._c2Commit(bound);
+			return;
+		}
+		if (message.role === "toolResult") {
+			const record = this._c2ToolCallRecords.get(message.toolCallId);
+			if (record) {
+				this._c2Commit(record);
+			}
+		}
+	}
+
+	private _submitUserInput(
+		cause: "prompt" | "steer" | "followUp",
+		payload: { text: string; images?: ImageContent[] },
+		options?: C2CallOptions,
+	): C2Accepted {
+		const accepted = this._applyC2Result(
+			this._c2Ingress.submit({
+				kind: "user_input",
+				actor: options?.actor ?? "user",
+				requestId: options?.requestId ?? uuidv7(),
+				sessionId: this.sessionId,
+				branchId: options?.branchId ?? this._c2BranchId(),
+				baseRevision: options?.baseRevision ?? this._c2CurrentRevision(),
+				source: { kind: "external_user", actorRef: options?.actor ?? "user" },
+				cause,
+				idempotencyKey: options?.idempotencyKey ?? uuidv7(),
+				payload,
+			}),
+		);
+		if (!accepted.replayed) {
+			this._c2OpenRecords.push(accepted.record);
+		}
+		return accepted;
+	}
+
 	/** Current session display name, if set */
 	get sessionName(): string | undefined {
 		return this.sessionManager.getSessionName();
@@ -1160,14 +1328,25 @@ export class AgentSession {
 		const expandPromptTemplates = options?.expandPromptTemplates ?? true;
 		const preflightResult = options?.preflightResult;
 		let messages: AgentMessage[] | undefined;
+		let submitted: C2Accepted | undefined;
+		let leavePending = false;
 
 		try {
-			// Handle extension commands first (execute immediately, even during streaming)
-			// Extension commands manage their own LLM interaction via pi.sendMessage()
+			submitted = this._submitUserInput(
+				"prompt",
+				options?.images && options.images.length > 0 ? { text, images: options.images } : { text },
+				options,
+			);
+			if (submitted.replayed) {
+				preflightResult?.(true);
+				return;
+			}
+
+			// Extension commands consume the admitted input; they manage their own LLM interaction.
 			if (expandPromptTemplates && text.startsWith("/")) {
 				const handled = await this._tryExecuteExtensionCommand(text);
 				if (handled) {
-					// Extension command executed, no prompt to send
+					this._c2Consume(submitted.record);
 					preflightResult?.(true);
 					return;
 				}
@@ -1190,6 +1369,7 @@ export class AgentSession {
 					this.isStreaming ? options?.streamingBehavior : undefined,
 				);
 				if (inputResult.action === "handled") {
+					this._c2Consume(submitted.record);
 					preflightResult?.(true);
 					return;
 				}
@@ -1214,10 +1394,11 @@ export class AgentSession {
 					);
 				}
 				if (options.streamingBehavior === "followUp") {
-					await this._queueFollowUp(expandedText, currentImages);
+					await this._queueFollowUp(expandedText, currentImages, submitted.record);
 				} else {
-					await this._queueSteer(expandedText, currentImages);
+					await this._queueSteer(expandedText, currentImages, submitted.record);
 				}
+				leavePending = true;
 				preflightResult?.(true);
 				return;
 			}
@@ -1261,11 +1442,13 @@ export class AgentSession {
 			if (currentImages) {
 				userContent.push(...currentImages);
 			}
-			messages.push({
+			const userMessage: AgentMessage = {
 				role: "user",
 				content: userContent,
 				timestamp: Date.now(),
-			});
+			};
+			this._c2BindMessage(submitted.record, userMessage);
+			messages.push(userMessage);
 
 			// Inject any pending "nextTurn" messages as context alongside the user message
 			for (const msg of this._pendingNextTurnMessages) {
@@ -1303,9 +1486,14 @@ export class AgentSession {
 				this._systemPromptOverride = undefined;
 				this.agent.state.systemPrompt = this._baseSystemPrompt;
 			}
+			leavePending = true;
 		} catch (error) {
 			preflightResult?.(false);
 			throw error;
+		} finally {
+			if (submitted && !submitted.replayed && !leavePending) {
+				this._c2Release(submitted.record);
+			}
 		}
 
 		if (!messages) {
@@ -1313,7 +1501,15 @@ export class AgentSession {
 		}
 
 		preflightResult?.(true);
-		await this._runAgentPrompt(messages);
+		try {
+			await this._runAgentPrompt(messages);
+		} finally {
+			if (submitted && !submitted.replayed) {
+				// Persisted or explicitly consumed records are already committed. A run
+				// resolving does not prove that its message_end persistence succeeded.
+				this._c2Release(submitted.record);
+			}
+		}
 	}
 
 	/**
@@ -1384,17 +1580,27 @@ export class AgentSession {
 	 * @param images Optional image attachments to include with the message
 	 * @throws Error if text is an extension command
 	 */
-	async steer(text: string, images?: ImageContent[]): Promise<void> {
-		// Check for extension commands (cannot be queued)
-		if (text.startsWith("/")) {
-			this._throwIfExtensionCommand(text);
+	async steer(text: string, images?: ImageContent[], options?: C2CallOptions): Promise<void> {
+		const submitted = this._submitUserInput(
+			"steer",
+			images && images.length > 0 ? { text, images } : { text },
+			options,
+		);
+		if (submitted.replayed) {
+			return;
 		}
 
-		// Expand skill commands and prompt templates
-		let expandedText = this._expandSkillCommand(text);
-		expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
-
-		await this._queueSteer(expandedText, images);
+		try {
+			if (text.startsWith("/")) {
+				this._throwIfExtensionCommand(text);
+			}
+			let expandedText = this._expandSkillCommand(text);
+			expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
+			await this._queueSteer(expandedText, images, submitted.record);
+		} catch (error) {
+			this._c2Release(submitted.record);
+			throw error;
+		}
 	}
 
 	/**
@@ -1404,51 +1610,69 @@ export class AgentSession {
 	 * @param images Optional image attachments to include with the message
 	 * @throws Error if text is an extension command
 	 */
-	async followUp(text: string, images?: ImageContent[]): Promise<void> {
-		// Check for extension commands (cannot be queued)
-		if (text.startsWith("/")) {
-			this._throwIfExtensionCommand(text);
+	async followUp(text: string, images?: ImageContent[], options?: C2CallOptions): Promise<void> {
+		const submitted = this._submitUserInput(
+			"followUp",
+			images && images.length > 0 ? { text, images } : { text },
+			options,
+		);
+		if (submitted.replayed) {
+			return;
 		}
 
-		// Expand skill commands and prompt templates
-		let expandedText = this._expandSkillCommand(text);
-		expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
-
-		await this._queueFollowUp(expandedText, images);
+		try {
+			if (text.startsWith("/")) {
+				this._throwIfExtensionCommand(text);
+			}
+			let expandedText = this._expandSkillCommand(text);
+			expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
+			await this._queueFollowUp(expandedText, images, submitted.record);
+		} catch (error) {
+			this._c2Release(submitted.record);
+			throw error;
+		}
 	}
 
 	/**
 	 * Internal: Queue a steering message (already expanded, no extension command check).
 	 */
-	private async _queueSteer(text: string, images?: ImageContent[]): Promise<void> {
+	private async _queueSteer(text: string, images?: ImageContent[], record?: C2IngressRecord): Promise<void> {
 		this._steeringMessages.push(text);
 		this._emitQueueUpdate();
 		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
 		if (images) {
 			content.push(...images);
 		}
-		this.agent.steer({
+		const message: AgentMessage = {
 			role: "user",
 			content,
 			timestamp: Date.now(),
-		});
+		};
+		if (record) {
+			this._c2BindMessage(record, message);
+		}
+		this.agent.steer(message);
 	}
 
 	/**
 	 * Internal: Queue a follow-up message (already expanded, no extension command check).
 	 */
-	private async _queueFollowUp(text: string, images?: ImageContent[]): Promise<void> {
+	private async _queueFollowUp(text: string, images?: ImageContent[], record?: C2IngressRecord): Promise<void> {
 		this._followUpMessages.push(text);
 		this._emitQueueUpdate();
 		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
 		if (images) {
 			content.push(...images);
 		}
-		this.agent.followUp({
+		const message: AgentMessage = {
 			role: "user",
 			content,
 			timestamp: Date.now(),
-		});
+		};
+		if (record) {
+			this._c2BindMessage(record, message);
+		}
+		this.agent.followUp(message);
 	}
 
 	/**
@@ -1589,7 +1813,10 @@ export class AgentSession {
 		const followUp = [...this._followUpMessages];
 		this._steeringMessages = [];
 		this._followUpMessages = [];
-		this.agent.clearAllQueues();
+		for (const message of this.agent.clearAllQueues()) {
+			const record = this._c2MessageRecords.get(message);
+			if (record) this._c2Release(record);
+		}
 		this._emitQueueUpdate();
 		return { steering, followUp };
 	}
@@ -1621,6 +1848,7 @@ export class AgentSession {
 		this.abortCompaction();
 		this.abortBranchSummary();
 		this.agent.abort();
+		// Awaited writes retain their admissions. Their owning paths commit or release them.
 		await this.waitForIdle();
 	}
 
@@ -3112,7 +3340,12 @@ export class AgentSession {
 	 */
 	async navigateTree(
 		targetId: string,
-		options: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string } = {},
+		options: {
+			summarize?: boolean;
+			customInstructions?: string;
+			replaceInstructions?: boolean;
+			label?: string;
+		} & C2CallOptions = {},
 	): Promise<{ editorText?: string; cancelled: boolean; aborted?: boolean; summaryEntry?: BranchSummaryEntry }> {
 		if (this.isStreaming) {
 			throw new Error("Wait for the current response to finish before navigating the session tree.");
@@ -3134,6 +3367,25 @@ export class AgentSession {
 		if (!targetEntry) {
 			throw new Error(`Entry ${targetId} not found`);
 		}
+
+		const submitted = this._applyC2Result(
+			this._c2Ingress.submit({
+				kind: "branch_control",
+				actor: options.actor ?? "user",
+				requestId: options.requestId ?? uuidv7(),
+				sessionId: this.sessionId,
+				branchId: options.branchId ?? this._c2BranchId(),
+				baseRevision: options.baseRevision ?? this._c2CurrentRevision(),
+				source: { kind: "control_intent" },
+				cause: "navigateTree",
+				idempotencyKey: options.idempotencyKey ?? uuidv7(),
+				payload: { targetId, summarize: options.summarize ?? false },
+			}),
+		);
+		if (submitted.replayed) {
+			return { cancelled: false };
+		}
+		this._c2OpenRecords.push(submitted.record);
 
 		// Collect entries to summarize (from old leaf to common ancestor)
 		const { entries: entriesToSummarize, commonAncestorId } = collectEntriesForBranchSummary(
@@ -3296,8 +3548,10 @@ export class AgentSession {
 
 			// Emit to custom tools
 
+			this._c2Commit(submitted.record);
 			return { editorText, cancelled: false, summaryEntry };
 		} finally {
+			this._c2Release(submitted.record);
 			this._branchSummaryAbortController = undefined;
 			this._resolveIdleWaitIfIdle();
 		}

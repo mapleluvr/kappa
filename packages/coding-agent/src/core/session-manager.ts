@@ -865,6 +865,7 @@ export class SessionManager {
 	private labelsById: Map<string, string> = new Map();
 	private labelTimestampsById: Map<string, string> = new Map();
 	private leafId: string | null = null;
+	private treeRevision = 0;
 
 	private constructor(
 		cwd: string,
@@ -942,6 +943,7 @@ export class SessionManager {
 		this.labelsById.clear();
 		this.labelTimestampsById.clear();
 		this.leafId = null;
+		this.treeRevision = 0;
 		this.flushed = false;
 
 		if (this.persist) {
@@ -988,6 +990,7 @@ export class SessionManager {
 				}
 			}
 		}
+		this.treeRevision = this.byId.size;
 	}
 
 	private _rewriteFile(): void {
@@ -1059,7 +1062,13 @@ export class SessionManager {
 		this.fileEntries.push(entry);
 		this.byId.set(entry.id, entry);
 		this.leafId = entry.id;
+		this.treeRevision += 1;
 		this._persist(entry);
+	}
+
+	/** Monotonic revision of tree structure: appends, leaf moves, and loads. */
+	getTreeRevision(): number {
+		return this.treeRevision;
 	}
 
 	/** Append a message as child of current leaf, then advance leaf. Returns entry id.
@@ -1376,6 +1385,7 @@ export class SessionManager {
 			throw new Error(`Entry ${branchFromId} not found`);
 		}
 		this.leafId = branchFromId;
+		this.treeRevision += 1;
 	}
 
 	/**
@@ -1385,6 +1395,7 @@ export class SessionManager {
 	 */
 	resetLeaf(): void {
 		this.leafId = null;
+		this.treeRevision += 1;
 	}
 
 	/**

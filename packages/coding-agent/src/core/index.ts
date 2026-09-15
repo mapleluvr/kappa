@@ -26,6 +26,20 @@ export {
 	createAgentSessionServices,
 } from "./agent-session-services.ts";
 export { type BashExecutorOptions, type BashResult, executeBashWithOperations } from "./bash-executor.ts";
+export {
+	C2_EMPTY_LEAF_ID,
+	type C2Accepted,
+	type C2CallOptions,
+	C2Ingress,
+	type C2IngressRecord,
+	type C2Kind,
+	type C2Provenance,
+	type C2Refused,
+	C2RefusedError,
+	type C2Result,
+	type C2RevisionProvider,
+	type C2Source,
+} from "./c2-ingress.ts";
 export type { CompactionResult } from "./compaction/index.ts";
 export { createEventBus, type EventBus, type EventBusController } from "./event-bus.ts";
 export { areExperimentalFeaturesEnabled } from "./experimental.ts";
