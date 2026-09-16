@@ -61,6 +61,14 @@ export {
 	type C2RevisionProvider,
 	type C2Source,
 } from "./c2-ingress.ts";
+export {
+	C2_CLAIM_SCHEMA_VERSION,
+	KAPPA_SOURCE_PIN,
+	type C2ClaimAdmission,
+	type C2ClaimReceipt,
+	type C2ClaimRefusal,
+	sealC2ClaimReceipt,
+} from "./c2-claim-receipt.ts";
 export type { CompactionResult } from "./compaction/index.ts";
 export { createEventBus, type EventBus, type EventBusController } from "./event-bus.ts";
 export { areExperimentalFeaturesEnabled } from "./experimental.ts";
