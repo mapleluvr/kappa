@@ -44,6 +44,14 @@ export {
 	type AgentSubjectUnsupported,
 	createAgentSubject,
 } from "./core/agent-subject.ts";
+export {
+	C2_CLAIM_SCHEMA_VERSION,
+	KAPPA_SOURCE_PIN,
+	type C2ClaimAdmission,
+	type C2ClaimReceipt,
+	type C2ClaimRefusal,
+	sealC2ClaimReceipt,
+} from "./core/c2-claim-receipt.ts";
 export { readStoredCredential } from "./core/auth-storage.ts";
 // Compaction
 export {
