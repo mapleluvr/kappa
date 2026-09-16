@@ -1,10 +1,10 @@
 # Environment Variables
 
-Pi uses environment variables in three ways:
+Kappa uses environment variables in three ways:
 
-- Variables such as `PI_OFFLINE` configure the Pi process.
-- Pi sets process markers so child processes can identify Pi as the launching agent.
-- Commands run by the LLM-callable shell tools receive `PI_*` variables describing the current session.
+- Variables such as `PI_OFFLINE` configure the Kappa process (legacy `PI_*` names still work).
+- Kappa sets process markers so child processes can identify Kappa as the launching agent.
+- Commands run by the LLM-callable shell tools receive `KAPPA_*` variables describing the current session.
 
 Provider API-key variables are documented separately in [Providers](providers.md#environment-variables-or-auth-file).
 
@@ -12,37 +12,37 @@ Provider API-key variables are documented separately in [Providers](providers.md
 
 The CLI and RPC entry points set two process markers:
 
-- `AI_AGENT=pi` is a generic marker that lets tooling identify Pi as the agent that launched the process.
-- `PI_CODING_AGENT=true` is Pi-specific and lets child processes detect that they run inside Pi.
+- `AI_AGENT=kappa` is a generic marker that lets tooling identify Kappa as the agent that launched the process.
+- `KAPPA_CODING_AGENT=true` lets child processes detect that they run inside Kappa. Inherited `PI_CODING_AGENT` is cleared so a parent Pi session cannot mislabel Kappa.
 
-Child processes inherit both markers. They are not session-specific and are not set automatically when Pi is embedded through the SDK.
+Child processes inherit both markers. They are not session-specific and are not set automatically when Kappa is embedded through the SDK.
 
 ## Shell Tool Session Environment
 
-Commands run by the `bash` and `powershell` tools receive the current Pi session state:
+Commands run by the `bash` and `powershell` tools receive the current Kappa session state:
 
 | Variable | Description |
 |----------|-------------|
-| `PI_SESSION_ID` | Current session ID |
-| `PI_SESSION_FILE` | Absolute path to the current session JSONL file; unset for ephemeral sessions |
-| `PI_PROVIDER` | Currently selected model provider |
-| `PI_MODEL` | Currently selected model ID |
-| `PI_REASONING_LEVEL` | Current effective reasoning level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` |
+| `KAPPA_SESSION_ID` | Current session ID |
+| `KAPPA_SESSION_FILE` | Absolute path to the current session JSONL file; unset for ephemeral sessions |
+| `KAPPA_PROVIDER` | Currently selected model provider |
+| `KAPPA_MODEL` | Currently selected model ID |
+| `KAPPA_REASONING_LEVEL` | Current effective reasoning level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` |
 
-The values are resolved when each command starts. Switching models or changing the reasoning level therefore affects the next shell command without restarting Pi. `PI_PROVIDER` and `PI_MODEL` identify the selected Pi model, not a different upstream model that a router may choose internally.
+The values are resolved when each command starts. Switching models or changing the reasoning level therefore affects the next shell command without restarting Kappa. `KAPPA_PROVIDER` and `KAPPA_MODEL` identify the selected Kappa model, not a different upstream model that a router may choose internally. Inherited `PI_SESSION_*` values are stripped so a nested Kappa process does not look like Pi.
 
 When asked which model or provider is running, inspect these variables instead of inferring the answer from the system prompt:
 
 ```bash
-printf '%s/%s\n' "$PI_PROVIDER" "$PI_MODEL"
-printf 'reasoning=%s session=%s\n' "$PI_REASONING_LEVEL" "$PI_SESSION_ID"
+printf '%s/%s\n' "$KAPPA_PROVIDER" "$KAPPA_MODEL"
+printf 'reasoning=%s session=%s\n' "$KAPPA_REASONING_LEVEL" "$KAPPA_SESSION_ID"
 ```
 
 The session file can be inspected directly when the session is persistent:
 
 ```bash
-if [ -n "$PI_SESSION_FILE" ]; then
-  tail -n 1 "$PI_SESSION_FILE"
+if [ -n "$KAPPA_SESSION_FILE" ]; then
+  tail -n 1 "$KAPPA_SESSION_FILE"
 fi
 ```
 
@@ -50,7 +50,7 @@ These variables are injected into the LLM-callable `bash` and `powershell` tools
 
 ### Custom Shell Tools
 
-Tools created with `createBashTool()` or `createPowerShellTool()` expose the session environment by default when registered with Pi. Injection happens before `spawnHook`, so a hook receives the variables in `ctx.env`:
+Tools created with `createBashTool()` or `createPowerShellTool()` expose the session environment by default when registered with Kappa. Injection happens before `spawnHook`, so a hook receives the variables in `ctx.env`:
 
 ```typescript
 const bashTool = createBashTool(cwd, {
@@ -70,7 +70,7 @@ const powershellTool = createPowerShellTool(cwd, {
 });
 ```
 
-When disabled, Pi removes inherited values for these variables so nested Pi processes do not expose stale parent-session metadata.
+When disabled, Kappa removes inherited `KAPPA_*` and leftover `PI_SESSION_*` values so nested processes do not expose stale parent-session metadata.
 
 ## Pi Process Configuration
 

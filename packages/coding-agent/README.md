@@ -672,8 +672,8 @@ pi --thinking high "Solve this complex problem"
 
 | Variable | Description |
 |----------|-------------|
-| `AI_AGENT` | Set to `pi` by the CLI and RPC entry points so generic tooling can attribute child processes to Pi |
-| `PI_CODING_AGENT` | Set to `true` by the CLI and RPC entry points so child processes can detect that they run inside Pi |
+| `AI_AGENT` | Set to `kappa` by the CLI and RPC entry points so generic tooling can attribute child processes to Kappa |
+| `KAPPA_CODING_AGENT` | Set to `true` by the CLI and RPC entry points so child processes can detect that they run inside Kappa |
 | `KAPPA_AGENT_DIR` | Override config directory (default: `~/.kappa/agent`) |
 | `KAPPA_AGENT_SESSION_DIR` | Override session storage directory (overridden by `--session-dir`) |
 | `KAPPA_PACKAGE_DIR` | Override package directory (useful for Nix/Guix where store paths tokenize poorly) |
@@ -687,11 +687,11 @@ Commands run by the LLM-callable `bash` and `powershell` tools also receive curr
 
 | Variable | Description |
 |----------|-------------|
-| `PI_SESSION_ID` | Current session ID |
-| `PI_SESSION_FILE` | Absolute session JSONL path; unset for ephemeral sessions |
-| `PI_PROVIDER` | Currently selected model provider |
-| `PI_MODEL` | Currently selected model ID |
-| `PI_REASONING_LEVEL` | Current effective reasoning level |
+| `KAPPA_SESSION_ID` | Current session ID |
+| `KAPPA_SESSION_FILE` | Absolute session JSONL path; unset for ephemeral sessions |
+| `KAPPA_PROVIDER` | Currently selected model provider |
+| `KAPPA_MODEL` | Currently selected model ID |
+| `KAPPA_REASONING_LEVEL` | Current effective reasoning level |
 
 These values are resolved when each command starts. See [Environment Variables](docs/environment-variables.md#shell-tool-session-environment) for semantics, examples, and custom-tool opt-out.
 

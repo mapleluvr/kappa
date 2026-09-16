@@ -3,8 +3,9 @@ import { configureHttpDispatcher } from "../core/http-dispatcher.ts";
 
 export function setupCli(): void {
 	process.title = APP_NAME;
-	process.env.PI_CODING_AGENT = "true";
-	process.env.AI_AGENT = "pi";
+	delete process.env.PI_CODING_AGENT;
+	process.env.KAPPA_CODING_AGENT = "true";
+	process.env.AI_AGENT = "kappa";
 	process.emitWarning = (() => {}) as typeof process.emitWarning;
 
 	// Configure undici before provider SDKs issue requests. Settings are applied

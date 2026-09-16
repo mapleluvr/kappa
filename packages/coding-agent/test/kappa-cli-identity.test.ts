@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { setupCli } from "../src/cli/setup.ts";
 
 const roots: string[] = [];
 const packageUrl = new URL("../package.json", import.meta.url);
@@ -86,5 +87,26 @@ describe("Kappa operator identity", () => {
 		expect(help).not.toContain("PI_PACKAGE_DIR");
 		expect(help).not.toContain("PI_CODING_AGENT_DIR");
 		expect(help).not.toContain("KAPPA_CODING_AGENT_DIR");
+	});
+
+	it("marks CLI child processes as kappa, not pi", () => {
+		const previous = {
+			AI_AGENT: process.env.AI_AGENT,
+			KAPPA_CODING_AGENT: process.env.KAPPA_CODING_AGENT,
+			PI_CODING_AGENT: process.env.PI_CODING_AGENT,
+		};
+		process.env.PI_CODING_AGENT = "true";
+		process.env.AI_AGENT = "pi";
+		try {
+			setupCli();
+			expect(process.env.AI_AGENT).toBe("kappa");
+			expect(process.env.KAPPA_CODING_AGENT).toBe("true");
+			expect(process.env.PI_CODING_AGENT).toBeUndefined();
+		} finally {
+			for (const [key, value] of Object.entries(previous)) {
+				if (value === undefined) delete process.env[key];
+				else process.env[key] = value;
+			}
+		}
 	});
 });
