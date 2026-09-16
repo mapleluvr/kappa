@@ -14,6 +14,13 @@ describe("resolveEscapeTimeoutMs", () => {
 		assert.equal(resolveEscapeTimeoutMs({ PI_TUI_ESC_TIMEOUT: "80", SSH_TTY: "/dev/pts/1" }), 80);
 	});
 
+	it("prefers KAPPA_TUI_ESC_TIMEOUT over PI_TUI_ESC_TIMEOUT", () => {
+		assert.equal(
+			resolveEscapeTimeoutMs({ KAPPA_TUI_ESC_TIMEOUT: "40", PI_TUI_ESC_TIMEOUT: "80" }),
+			40,
+		);
+	});
+
 	it("ignores invalid PI_TUI_ESC_TIMEOUT values", () => {
 		assert.equal(resolveEscapeTimeoutMs({ PI_TUI_ESC_TIMEOUT: "abc" }), 10);
 		assert.equal(resolveEscapeTimeoutMs({ PI_TUI_ESC_TIMEOUT: "0" }), 10);
