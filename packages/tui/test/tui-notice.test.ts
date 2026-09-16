@@ -83,6 +83,26 @@ describe("renderTuiNotice", () => {
 		assert.strictEqual(line.trimEnd(), "[warning] compaction.warning  keepthistext more next line end and last");
 	});
 
+	it("flattens unicode format and bidi controls", () => {
+		const lines = renderTuiNotice(
+			compactionWarning({
+				code: "compaction\u200B.warning",
+				message: "keep\u202Esecret\u202C text\u2066hidden\u2069end",
+			}),
+			120,
+		);
+		assert.strictEqual(lines.length, 1);
+		const line = lines[0];
+		assertSafeNoticeLine(line, 120);
+		assert.strictEqual(line.includes("\u200B"), false);
+		assert.strictEqual(line.includes("\u202E"), false);
+		assert.strictEqual(line.includes("\u202C"), false);
+		assert.strictEqual(line.includes("\u2066"), false);
+		assert.strictEqual(line.includes("\u2069"), false);
+		assert.ok(line.includes("secret"));
+		assert.ok(line.includes("hidden"));
+	});
+
 	it("does not re-inject ANSI reset or escapes when truncating", () => {
 		const lines = renderTuiNotice(compactionWarning({ message: "overflow ".repeat(200) }), 40);
 		assert.strictEqual(lines.length, 1);

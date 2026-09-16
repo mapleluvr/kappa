@@ -79,6 +79,26 @@ export { type RenderLatexOptions, renderLatex } from "./latex.ts";
 export { getNativeClipboard, type NativeClipboard } from "./native-platform.ts";
 // Presentation-safe notices
 export { renderTuiNotice, type TuiNotice, type TuiNoticeLevel } from "./notice.ts";
+// Read-only run attachment and projection
+export {
+	inspectTuiRunMutation,
+	renderTuiRunProjection,
+	type TuiAgentRunState,
+	type TuiAttachmentState,
+	type TuiEnvelopeIdentity,
+	type TuiEventEnvelope,
+	type TuiOutcomeEnvelope,
+	TuiRunAttachment,
+	type TuiRunFacade,
+	type TuiRunFacadeError,
+	type TuiRunIdentity,
+	type TuiRunMutationInspection,
+	type TuiRunObserveOk,
+	type TuiRunObserveResult,
+	type TuiRunProjection,
+	type TuiSandboxLifecycleState,
+	type TuiSandboxProjectionState,
+} from "./run-projection.ts";
 // Input buffering for batch splitting
 export { StdinBuffer, type StdinBufferEventMap, type StdinBufferOptions } from "./stdin-buffer.ts";
 // Terminal interface and implementations
