@@ -65,6 +65,8 @@ const S1_PROJECTION = {
 };
 
 class MemoryRunFacade implements TuiRunFacade {
+	readonly kind = "unified" as const;
+	readonly sourceId = "s1-unified-fixture";
 	private readonly events: readonly TuiEventEnvelope[];
 	private readonly outcomeList: readonly TuiOutcomeEnvelope[];
 	private readonly ignoreCursor: boolean;
@@ -135,6 +137,8 @@ function boxEvent(
 }
 
 class ObserveErrorFacade {
+	readonly kind = "unified" as const;
+	readonly sourceId = "s1-unified-fixture";
 	private readonly error: TuiRunFacadeError;
 
 	constructor(error: TuiRunFacadeError) {
@@ -1332,6 +1336,8 @@ describe("TuiRunAttachment", () => {
 		const prior = attachment.projection;
 		attachment.beginAttach();
 		const recovered = attachment.apply({
+			kind: "unified",
+			sourceId: "s1-unified-fixture",
 			observe() {
 				throw new Error("facade down");
 			},
