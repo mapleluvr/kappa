@@ -25,6 +25,27 @@ export {
 	createAgentSessionFromServices,
 	createAgentSessionServices,
 } from "./agent-session-services.ts";
+export {
+	AGENT_SUBJECT_SCHEMA_VERSION,
+	AgentSubject,
+	type AgentSubjectAbortResult,
+	type AgentSubjectCause,
+	type AgentSubjectEvent,
+	type AgentSubjectEventType,
+	type AgentSubjectIdentity,
+	type AgentSubjectObserveResult,
+	type AgentSubjectOptions,
+	type AgentSubjectProvenance,
+	type AgentSubjectRefused,
+	type AgentSubjectResult,
+	type AgentSubjectSettledResult,
+	type AgentSubjectStartResult,
+	type AgentSubjectSubmitInput,
+	type AgentSubjectSubmitResult,
+	type AgentSubjectUnknown,
+	type AgentSubjectUnsupported,
+	createAgentSubject,
+} from "./agent-subject.ts";
 export { type BashExecutorOptions, type BashResult, executeBashWithOperations } from "./bash-executor.ts";
 export {
 	C2_EMPTY_LEAF_ID,

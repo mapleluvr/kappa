@@ -23,6 +23,27 @@ export {
 	parseSkillBlock,
 	type SessionStats,
 } from "./core/agent-session.ts";
+export {
+	AGENT_SUBJECT_SCHEMA_VERSION,
+	AgentSubject,
+	type AgentSubjectAbortResult,
+	type AgentSubjectCause,
+	type AgentSubjectEvent,
+	type AgentSubjectEventType,
+	type AgentSubjectIdentity,
+	type AgentSubjectObserveResult,
+	type AgentSubjectOptions,
+	type AgentSubjectProvenance,
+	type AgentSubjectRefused,
+	type AgentSubjectResult,
+	type AgentSubjectSettledResult,
+	type AgentSubjectStartResult,
+	type AgentSubjectSubmitInput,
+	type AgentSubjectSubmitResult,
+	type AgentSubjectUnknown,
+	type AgentSubjectUnsupported,
+	createAgentSubject,
+} from "./core/agent-subject.ts";
 export { readStoredCredential } from "./core/auth-storage.ts";
 // Compaction
 export {
