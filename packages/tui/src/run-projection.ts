@@ -76,7 +76,7 @@ export interface TuiRunProjection {
 }
 
 export interface TuiRunFacadeError {
-	readonly kind: "refused" | "failed" | "unknown";
+	readonly kind: "refused" | "failed" | "unknown" | "unsupported";
 	readonly code: string;
 	readonly operation?: string;
 	readonly sideEffect?: string;
@@ -92,8 +92,15 @@ export interface TuiRunObserveOk {
 export type TuiRunObserveResult = Iterable<TuiEventEnvelope> | TuiRunObserveOk | TuiRunFacadeError;
 
 export interface TuiRunFacade {
+	readonly kind?: "unified";
+	readonly sourceId?: string;
 	observe(cursor?: string | null): TuiRunObserveResult;
 	outcomes?(): Iterable<TuiOutcomeEnvelope> | TuiRunFacadeError;
+}
+
+export interface TuiUnifiedEventSource extends TuiRunFacade {
+	readonly kind: "unified";
+	readonly sourceId: string;
 }
 
 export interface TuiRunMutationInspection {
@@ -143,8 +150,22 @@ function isOutcomeKind(value: unknown): value is "refused" | "failed" | "unknown
 	return value === "refused" || value === "failed" || value === "unknown";
 }
 
+function isFacadeErrorKind(value: unknown): value is TuiRunFacadeError["kind"] {
+	return isOutcomeKind(value) || value === "unsupported";
+}
+
+export function isTuiUnifiedEventSource(value: unknown): value is TuiUnifiedEventSource {
+	return (
+		isRecord(value) &&
+		value.kind === "unified" &&
+		typeof value.sourceId === "string" &&
+		value.sourceId.length > 0 &&
+		typeof value.observe === "function"
+	);
+}
+
 function isTuiRunFacadeError(value: unknown): value is TuiRunFacadeError {
-	if (!isRecord(value) || !isOutcomeKind(value.kind)) {
+	if (!isRecord(value) || !isFacadeErrorKind(value.kind)) {
 		return false;
 	}
 	if (typeof value.code !== "string" || value.code.length === 0) {
@@ -239,6 +260,31 @@ function readOutcomes(
 	return { kind: "unknown", code: "observe_failed" };
 }
 
+function unsupportedObserve(code: string): TuiRunFacadeError {
+	return {
+		kind: "unsupported",
+		code,
+		operation: "observe",
+		sideEffect: "none",
+		retry: "none",
+		reconcile: false,
+	};
+}
+
+export function declareTuiUnifiedEventSource(source: {
+	readonly sourceId: string;
+	observe(cursor?: string | null): TuiRunObserveResult;
+	outcomes?(): Iterable<TuiOutcomeEnvelope> | TuiRunFacadeError;
+}): TuiUnifiedEventSource {
+	const outcomes = source.outcomes;
+	return {
+		kind: "unified",
+		sourceId: source.sourceId,
+		observe: (cursor?: string | null) => source.observe(cursor),
+		...(outcomes ? { outcomes: () => outcomes.call(source) } : {}),
+	};
+}
+
 export function inspectTuiRunMutation(command: string): TuiRunMutationInspection {
 	void command;
 	return { supported: false, readOnly: true };
@@ -263,6 +309,7 @@ export class TuiRunAttachment {
 	private readonly seenOperationIds: Set<string>;
 	private readonly eventIds: string[];
 	private readonly operationIds: string[];
+	private sourceId: string | undefined;
 	private currentProjection: TuiRunProjection;
 
 	constructor() {
@@ -284,6 +331,7 @@ export class TuiRunAttachment {
 		this.seenOperationIds = new Set();
 		this.eventIds = [];
 		this.operationIds = [];
+		this.sourceId = undefined;
 		this.currentProjection = this.buildProjection();
 	}
 
@@ -321,22 +369,29 @@ export class TuiRunAttachment {
 			throw new Error("cannot apply unless attaching");
 		}
 		try {
-			const observeCursor = cursor === undefined ? this.lastCursor : cursor;
-			const observed = readEvents(facade.observe(observeCursor));
-			if (isTuiRunFacadeError(observed)) {
-				this.noteFacadeError(observed);
+			if (!isTuiUnifiedEventSource(facade)) {
+				this.noteFacadeError(unsupportedObserve("unsupported"));
+			} else if (this.sourceId !== undefined && facade.sourceId !== this.sourceId) {
+				this.noteFacadeError(unsupportedObserve("independent_cursor_space"));
 			} else {
-				for (const event of sortEvents(observed)) {
-					this.applyEvent(event);
-				}
-			}
-			if (facade.outcomes) {
-				const outcomes = readOutcomes(facade.outcomes());
-				if (isTuiRunFacadeError(outcomes)) {
-					this.noteFacadeError(outcomes);
+				this.sourceId = facade.sourceId;
+				const observeCursor = cursor === undefined ? this.lastCursor : cursor;
+				const observed = readEvents(facade.observe(observeCursor));
+				if (isTuiRunFacadeError(observed)) {
+					this.noteFacadeError(observed);
 				} else {
-					for (const outcome of outcomes) {
-						this.applyOutcome(outcome);
+					for (const event of sortEvents(observed)) {
+						this.applyEvent(event);
+					}
+				}
+				if (facade.outcomes) {
+					const outcomes = readOutcomes(facade.outcomes());
+					if (isTuiRunFacadeError(outcomes)) {
+						this.noteFacadeError(outcomes);
+					} else {
+						for (const outcome of outcomes) {
+							this.applyOutcome(outcome);
+						}
 					}
 				}
 			}
@@ -386,6 +441,7 @@ export class TuiRunAttachment {
 		this.seenOperationIds.clear();
 		this.eventIds.length = 0;
 		this.operationIds.length = 0;
+		this.sourceId = undefined;
 	}
 
 	private noteFacadeError(error: TuiRunFacadeError): void {
@@ -423,6 +479,15 @@ export class TuiRunAttachment {
 			if (!this.warning) {
 				this.warning = { code, severity: "warning" };
 			}
+		}
+		if (event.type === "compaction.warning") {
+			if (!this.warning) {
+				this.warning = {
+					code: optionalRecordString(event.payload, "code") ?? "compaction.warning",
+					severity: "warning",
+				};
+			}
+			return;
 		}
 		this.applyBoxEvent(event);
 	}

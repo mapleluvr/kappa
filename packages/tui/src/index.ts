@@ -81,7 +81,9 @@ export { getNativeClipboard, type NativeClipboard } from "./native-platform.ts";
 export { renderTuiNotice, type TuiNotice, type TuiNoticeLevel } from "./notice.ts";
 // Read-only run attachment and projection
 export {
+	declareTuiUnifiedEventSource,
 	inspectTuiRunMutation,
+	isTuiUnifiedEventSource,
 	renderTuiRunProjection,
 	type TuiAgentRunState,
 	type TuiAttachmentState,
@@ -98,6 +100,7 @@ export {
 	type TuiRunProjection,
 	type TuiSandboxLifecycleState,
 	type TuiSandboxProjectionState,
+	type TuiUnifiedEventSource,
 } from "./run-projection.ts";
 // Input buffering for batch splitting
 export { StdinBuffer, type StdinBufferEventMap, type StdinBufferOptions } from "./stdin-buffer.ts";
