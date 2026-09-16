@@ -27,6 +27,9 @@ export const isBunRuntime = !!process.versions.bun;
 declare const PI_BUNDLED_NODE: boolean;
 export const isBundledNode = typeof PI_BUNDLED_NODE !== "undefined" && PI_BUNDLED_NODE;
 
+/** Named before package.json is read; getPackageDir() cannot use APP_NAME. */
+export const ENV_PACKAGE_DIR = "KAPPA_PACKAGE_DIR";
+
 // =============================================================================
 // Install Method Detection
 // =============================================================================
@@ -388,7 +391,7 @@ export function findNodePackageDir(startDir: string): string {
 
 export function getPackageDir(): string {
 	// Allow override via environment variable (useful for Nix/Guix where store paths tokenize poorly)
-	const envDir = process.env.PI_PACKAGE_DIR;
+	const envDir = process.env[ENV_PACKAGE_DIR];
 	if (envDir) {
 		return normalizePath(envDir);
 	}
@@ -499,14 +502,14 @@ try {
 
 const piConfigName: string | undefined = pkg.piConfig?.name;
 export const PACKAGE_NAME: string = pkg.name || "@mapleluvr/kappa-coding-agent";
-export const APP_NAME: string = piConfigName || "pi";
-export const APP_TITLE: string = piConfigName ? APP_NAME : "π";
-export const CONFIG_DIR_NAME: string = pkg.piConfig?.configDir || ".pi";
+export const APP_NAME: string = piConfigName || "kappa";
+export const APP_TITLE: string = APP_NAME;
+export const CONFIG_DIR_NAME: string = pkg.piConfig?.configDir || ".kappa";
 export const VERSION: string = pkg.version || "0.0.0";
 
-// e.g., PI_CODING_AGENT_DIR or TAU_CODING_AGENT_DIR
-export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
-export const ENV_SESSION_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_SESSION_DIR`;
+// e.g., KAPPA_AGENT_DIR / KAPPA_AGENT_SESSION_DIR
+export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_AGENT_DIR`;
+export const ENV_SESSION_DIR = `${APP_NAME.toUpperCase()}_AGENT_SESSION_DIR`;
 
 export function expandTildePath(path: string): string {
 	return normalizePath(path);
