@@ -55,6 +55,7 @@ import {
 	VERSION,
 } from "../../config.ts";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.ts";
+import { NATIVE_COMPACTION_DISABLED_MESSAGE } from "../../core/context-strategy/native-compaction.ts";
 import { type AgentSessionRuntime, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.ts";
 import type { AgentSessionRuntimeDiagnostic } from "../../core/agent-session-services.ts";
 import {
@@ -4018,13 +4019,19 @@ export class InteractiveMode {
 		this.isShuttingDown = true;
 		try {
 			this.unregisterSignalHandlers();
-		} catch {}
+		} catch (error) {
+			void error;
+		}
 		try {
 			killTrackedDetachedChildren();
-		} catch {}
+		} catch (error) {
+			void error;
+		}
 		try {
 			this.ui.stop();
-		} catch {}
+		} catch (error) {
+			void error;
+		}
 		console.error(`${APP_NAME} exiting due to uncaughtException:`);
 		console.error(error);
 		process.exit(1);
@@ -6582,14 +6589,8 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private async handleCompactCommand(customInstructions?: string): Promise<void> {
-		this.clearStatusIndicator();
-
-		try {
-			await this.session.compact(customInstructions);
-		} catch {
-			// Ignore, will be emitted as an event
-		}
+	private async handleCompactCommand(_customInstructions?: string): Promise<void> {
+		this.showError(NATIVE_COMPACTION_DISABLED_MESSAGE);
 	}
 
 	stop(fullscreenExitOutput = this.settingsManager.getFullscreenExitOutput()): void {

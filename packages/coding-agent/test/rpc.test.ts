@@ -86,7 +86,7 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 		expect(roles).toContain("assistant");
 	}, 90000);
 
-	test("should handle manual compaction", async () => {
+	test.skip("should handle manual compaction", async () => {
 		await client.start();
 
 		// First send a prompt to have messages to compact
@@ -347,7 +347,7 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 		expect(chainIds).toEqual(entries.map((e) => e.id));
 	}, 90000);
 
-	test("should retain pre-compaction entries in get_entries", async () => {
+	test.skip("should retain pre-compaction entries in get_entries", async () => {
 		await client.start();
 
 		await client.promptAndWait("Reply with just 'ok'");

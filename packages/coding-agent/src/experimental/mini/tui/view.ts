@@ -522,7 +522,6 @@ export async function runView(client: AttachedSession): Promise<void> {
 			if (trimmed === "/model") return selectModel();
 			if (trimmed === "/login") return login();
 			if (trimmed === "/compact") {
-				void client.lane.compact().then(report);
 				return;
 			}
 			// A submission during an active run steers it; alt+enter queues a follow-up instead.
@@ -541,7 +540,7 @@ export async function runView(client: AttachedSession): Promise<void> {
 		view.apply(snapshot.lane);
 		const { model, thinkingLevel } = snapshot.lane.configuration;
 		view.setFooter(
-			`${model.provider}/${model.modelId} · thinking:${thinkingLevel} · ${keyText("app.model.select")} or /model · /login · /compact · ${keyText("app.message.followUp")} follow-up · ${keyText("app.clear")} exit`,
+			`${model.provider}/${model.modelId} · thinking:${thinkingLevel} · ${keyText("app.model.select")} or /model · /login · ${keyText("app.message.followUp")} follow-up · ${keyText("app.clear")} exit`,
 		);
 	};
 	const unsubscribe = client.subscribe(render);

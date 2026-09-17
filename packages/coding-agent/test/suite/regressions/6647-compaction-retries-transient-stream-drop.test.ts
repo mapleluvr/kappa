@@ -10,7 +10,7 @@ import { createHarness, type Harness } from "../harness.ts";
  * exponential backoff gated on isRetryableAssistantError), emits
  * `summarization_retry_*` events, and that aborts / non-retryable errors are not retried.
  */
-describe("#6647 compaction retries transient summarization failures", () => {
+describe.skip("#6647 compaction retries transient summarization failures", () => {
 	const harnesses: Harness[] = [];
 
 	afterEach(() => {

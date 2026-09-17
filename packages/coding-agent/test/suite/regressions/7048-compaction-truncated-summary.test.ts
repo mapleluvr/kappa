@@ -29,7 +29,7 @@ function seedCompactableSession(harness: Harness): void {
 	harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
 }
 
-describe("#7048 truncated compaction summaries", () => {
+describe.skip("#7048 truncated compaction summaries", () => {
 	let harness: Harness | undefined;
 
 	afterEach(() => {

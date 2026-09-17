@@ -14,6 +14,7 @@
 import * as crypto from "node:crypto";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { C2_EMPTY_LEAF_ID, type C2CallOptions } from "../../core/c2-ingress.ts";
+import { NATIVE_COMPACTION_DISABLED_MESSAGE } from "../../core/context-strategy/native-compaction.ts";
 import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
@@ -544,13 +545,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "compact": {
-				const result = await session.compact(command.customInstructions);
-				return success(id, "compact", result);
+				return error(id, "compact", NATIVE_COMPACTION_DISABLED_MESSAGE);
 			}
 
 			case "set_auto_compaction": {
-				session.setAutoCompactionEnabled(command.enabled);
-				return success(id, "set_auto_compaction");
+				return error(id, "set_auto_compaction", NATIVE_COMPACTION_DISABLED_MESSAGE);
 			}
 
 			// =================================================================
