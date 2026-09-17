@@ -21,7 +21,7 @@ import { SettingsManager } from "../src/core/settings-manager.ts";
 import { createCodingTools } from "../src/index.ts";
 import { API_KEY, createTestResourceLoader } from "./utilities.ts";
 
-describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
+describe.skip("AgentSession compaction e2e (native operations detached)", () => {
 	let session: AgentSession;
 	let tempDir: string;
 	let sessionManager: SessionManager;
@@ -81,7 +81,7 @@ describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
 		return session;
 	}
 
-	it("should trigger manual compaction via compact()", async () => {
+	it.skip("should trigger manual compaction via compact()", async () => {
 		await createSession();
 
 		// Send a few prompts to build up history

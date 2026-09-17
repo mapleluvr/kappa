@@ -441,7 +441,7 @@ describe("AgentSession prompt characterization", () => {
 		await promptPromise;
 	});
 
-	it("throws when prompted during manual compaction", async () => {
+	it.skip("throws when prompted during manual compaction", async () => {
 		let markCompactionStarted = () => {};
 		const compactionStarted = new Promise<void>((resolve) => {
 			markCompactionStarted = resolve;

@@ -2,7 +2,7 @@ import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHarness, getMessageText, getUserTexts, type Harness } from "../harness.ts";
 
-describe("issue #7150: RPC prompt during manual compaction", () => {
+describe.skip("issue #7150: RPC prompt during manual compaction", () => {
 	const harnesses: Harness[] = [];
 
 	afterEach(() => {

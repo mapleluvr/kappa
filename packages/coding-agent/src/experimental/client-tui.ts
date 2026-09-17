@@ -621,8 +621,8 @@ export class ExperimentalClientTui implements Component {
 
 	#footer(): string {
 		const snapshot = this.#laneSnapshot();
-		if (!snapshot) return "/model · /thinking · /compact · /reload";
-		return `${snapshot.configuration.model.provider}/${snapshot.configuration.model.modelId} · thinking:${snapshot.configuration.thinkingLevel} · ${snapshot.stats.messageCount} messages · /model · /thinking · /compact · /reload`;
+		if (!snapshot) return "/model · /thinking · /reload";
+		return `${snapshot.configuration.model.provider}/${snapshot.configuration.model.modelId} · thinking:${snapshot.configuration.thinkingLevel} · ${snapshot.stats.messageCount} messages · /model · /thinking · /reload`;
 	}
 }
 

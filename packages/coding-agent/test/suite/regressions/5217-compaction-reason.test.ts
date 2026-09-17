@@ -43,7 +43,7 @@ async function createCompactionHarness(recorded: RecordedCompactionEvent[]): Pro
 	return harness;
 }
 
-describe("issue #5217 compaction reason on extension events", () => {
+describe.skip("issue #5217 compaction reason on extension events", () => {
 	const harnesses: Harness[] = [];
 
 	afterEach(() => {

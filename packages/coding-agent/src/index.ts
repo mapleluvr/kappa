@@ -44,15 +44,19 @@ export {
 	type AgentSubjectUnsupported,
 	createAgentSubject,
 } from "./core/agent-subject.ts";
+export { readStoredCredential } from "./core/auth-storage.ts";
 export {
 	C2_CLAIM_SCHEMA_VERSION,
-	KAPPA_SOURCE_PIN,
 	type C2ClaimAdmission,
 	type C2ClaimReceipt,
 	type C2ClaimRefusal,
+	KAPPA_SOURCE_PIN,
 	sealC2ClaimReceipt,
 } from "./core/c2-claim-receipt.ts";
-export { readStoredCredential } from "./core/auth-storage.ts";
+export {
+	NATIVE_COMPACTION_DISABLED_CODE,
+	NATIVE_COMPACTION_DISABLED_MESSAGE,
+} from "./core/context-strategy/native-compaction.ts";
 // Compaction
 export {
 	type BranchPreparation,
@@ -77,6 +81,20 @@ export {
 	serializeConversation,
 	shouldCompact,
 } from "./core/compaction/index.ts";
+export {
+	type ActivateStrategyResult,
+	CONTEXT_STRATEGY_DEFAULT_ENTRY_ID,
+	type ConfigureStrategyRequest,
+	type ConfigureStrategyResult,
+	ContextStrategyManagement,
+	type DeactivateStrategyResult,
+	type DeleteStrategyResult,
+	type StrategyEntryRecord,
+	type StrategyEntryState,
+	type StrategyQuerySnapshot,
+	WRITE_HOOK_CONTEXT_ARTIFACTS,
+	WRITE_HOOK_REAL_CONTEXT,
+} from "./core/context-strategy/management.ts";
 export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.ts";
 // Extension system
 export type {

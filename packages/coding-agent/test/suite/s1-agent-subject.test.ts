@@ -896,7 +896,7 @@ describe("S1 Agent Subject facade", () => {
 		expect(harness.session.getC2Record("idem-bad-image")).toBeUndefined();
 	});
 
-	it("settled returns the real agent_settled without waiting on later compaction", async () => {
+	it.skip("settled returns the real agent_settled without waiting on later compaction", async () => {
 		const compaction = deferred();
 		let markCompactionStarted = () => {};
 		const compactionStarted = new Promise<void>((resolve) => {

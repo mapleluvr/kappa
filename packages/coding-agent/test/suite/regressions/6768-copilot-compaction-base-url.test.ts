@@ -38,7 +38,7 @@ function seedCompactableSession(harness: Harness): void {
 	harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
 }
 
-describe("issue #6768 Copilot compaction base URL", () => {
+describe.skip("issue #6768 Copilot compaction base URL", () => {
 	let harness: Harness | undefined;
 
 	afterEach(() => {

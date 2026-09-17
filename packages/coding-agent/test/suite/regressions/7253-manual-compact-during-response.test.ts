@@ -14,7 +14,7 @@ function createNoopTool(): AgentTool {
 	};
 }
 
-describe("issue #7253: manual compaction during an active response", () => {
+describe.skip("issue #7253: manual compaction during an active response", () => {
 	const harnesses: Harness[] = [];
 
 	afterEach(() => {

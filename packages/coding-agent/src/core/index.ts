@@ -48,6 +48,14 @@ export {
 } from "./agent-subject.ts";
 export { type BashExecutorOptions, type BashResult, executeBashWithOperations } from "./bash-executor.ts";
 export {
+	C2_CLAIM_SCHEMA_VERSION,
+	type C2ClaimAdmission,
+	type C2ClaimReceipt,
+	type C2ClaimRefusal,
+	KAPPA_SOURCE_PIN,
+	sealC2ClaimReceipt,
+} from "./c2-claim-receipt.ts";
+export {
 	C2_EMPTY_LEAF_ID,
 	type C2Accepted,
 	type C2CallOptions,
@@ -61,15 +69,25 @@ export {
 	type C2RevisionProvider,
 	type C2Source,
 } from "./c2-ingress.ts";
-export {
-	C2_CLAIM_SCHEMA_VERSION,
-	KAPPA_SOURCE_PIN,
-	type C2ClaimAdmission,
-	type C2ClaimReceipt,
-	type C2ClaimRefusal,
-	sealC2ClaimReceipt,
-} from "./c2-claim-receipt.ts";
 export type { CompactionResult } from "./compaction/index.ts";
+export {
+	type ActivateStrategyResult,
+	CONTEXT_STRATEGY_DEFAULT_ENTRY_ID,
+	type ConfigureStrategyRequest,
+	type ConfigureStrategyResult,
+	ContextStrategyManagement,
+	type DeactivateStrategyResult,
+	type DeleteStrategyResult,
+	type StrategyEntryRecord,
+	type StrategyEntryState,
+	type StrategyQuerySnapshot,
+	WRITE_HOOK_CONTEXT_ARTIFACTS,
+	WRITE_HOOK_REAL_CONTEXT,
+} from "./context-strategy/management.ts";
+export {
+	NATIVE_COMPACTION_DISABLED_CODE,
+	NATIVE_COMPACTION_DISABLED_MESSAGE,
+} from "./context-strategy/native-compaction.ts";
 export { createEventBus, type EventBus, type EventBusController } from "./event-bus.ts";
 export { areExperimentalFeaturesEnabled } from "./experimental.ts";
 // Extensions system

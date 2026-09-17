@@ -1,6 +1,5 @@
 import { defineFacet, type Facet, type JsonValue } from "@earendil-works/chord";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { AgentController } from "./agent-controller.ts";
 import { type ModelSummary, Models, type Models as ModelsService } from "./models.ts";
 import { PresentationPlugins, SessionPlugins } from "./plugins.ts";
 import { PresentationUI } from "./presentation-ui.ts";
@@ -91,14 +90,12 @@ export function createBuiltInSlashCommandsFacet(options: {
 		setup(env) {
 			const commands = env.use(SlashCommands);
 			const models = env.use(Models);
-			const controller = env.use(AgentController);
 			const ui = env.use(PresentationUI);
 			const presentationPlugins = env.use(PresentationPlugins);
 			const sessionPlugins = env.use(SessionPlugins);
 			env.onActivate(() => {
 				env.own(commands.replace(modelCommand(models, ui)));
 				env.own(commands.replace(thinkingCommand(models, ui)));
-				env.own(commands.replace(compactCommand(controller, ui)));
 				env.own(
 					commands.replace({
 						name: "reload",
@@ -197,18 +194,6 @@ function thinkingCommand(models: ModelsService, ui: PresentationUI): SlashComman
 			await models.selectThinking(selected, context);
 			ui.showStatus(`Thinking level: ${selected}.`, context);
 			return undefined;
-		},
-	};
-}
-
-function compactCommand(controller: AgentController, ui: PresentationUI): SlashCommandContribution {
-	return {
-		name: "compact",
-		description: "Manually compact the session context",
-		argumentHint: "<instructions>",
-		run(args, context) {
-			ui.showStatus("Compacting…", context);
-			return controller.compact({ customInstructions: args.length === 0 ? null : args }, context);
 		},
 	};
 }
