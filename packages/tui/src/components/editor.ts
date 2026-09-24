@@ -2296,6 +2296,7 @@ export class Editor implements Component, Focusable {
 					this.state.cursorCol,
 				);
 			if (!shouldTrigger) {
+				this.cancelAutocomplete();
 				return;
 			}
 		}

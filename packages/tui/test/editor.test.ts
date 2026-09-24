@@ -2294,6 +2294,28 @@ describe("Editor component", () => {
 			assert.strictEqual(editor.getText(), "/search，文档.md");
 		});
 
+
+		it("cancels a forced file menu when the cursor leaves a slash argument", async () => {
+			const baseDir = mkdtempSync(join(tmpdir(), "pi-editor-stale-autocomplete-"));
+			try {
+				writeFileSync(join(baseDir, "文档.md"), "text");
+				writeFileSync(join(baseDir, "文档.txt"), "text");
+				const editor = new Editor(createTestTUI(), defaultEditorTheme);
+				editor.setAutocompleteProvider(new CombinedAutocompleteProvider([], baseDir));
+				editor.setText("/search，文");
+				editor.handleInput("\t");
+				await flushAutocomplete();
+				assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+				editor.handleInput("\x1b[D");
+				editor.handleInput("\x1b[D");
+				await flushAutocomplete();
+				assert.strictEqual(editor.isShowingAutocomplete(), false);
+			} finally {
+				rmSync(baseDir, { recursive: true, force: true });
+			}
+		});
+
 		it("ends unquoted trigger and debounce contexts at whitespace or CJK punctuation", async (t) => {
 			t.mock.timers.enable({ apis: ["setTimeout"] });
 			for (const separator of [" ", "\u3000", "，", "。"]) {
