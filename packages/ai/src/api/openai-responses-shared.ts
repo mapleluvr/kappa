@@ -778,7 +778,10 @@ export async function processResponsesStream<TApi extends Api>(
 		}
 	}
 	if (!sawTerminalResponseEvent) {
-		const providerName = model.provider === "openai" ? "OpenAI" : model.provider;
+		let providerName = model.provider;
+		if (providerName === "openai") providerName = "OpenAI";
+		else if (providerName === "azure-openai-responses") providerName = "Azure OpenAI";
+		else if (providerName === "openai-codex") providerName = "Codex";
 		throw new Error(`${providerName} Responses stream ended before a terminal response event`);
 	}
 }

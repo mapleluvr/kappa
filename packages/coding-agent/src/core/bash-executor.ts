@@ -122,7 +122,7 @@ export async function executeBashWithOperations(
 
 		return {
 			output: truncationResult.truncated ? truncationResult.content : fullOutput,
-			exitCode: cancelled ? undefined : (result.exitCode ?? undefined),
+			exitCode: cancelled ? undefined : (result.exitCode ?? 1),
 			cancelled,
 			truncated: truncationResult.truncated,
 			fullOutputPath: tempFilePath,

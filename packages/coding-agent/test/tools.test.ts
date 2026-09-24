@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executeBashWithOperations } from "../src/core/bash-executor.ts";
+import { bashExecutionToText } from "../src/core/messages.ts";
 import type { ExtensionContext } from "../src/core/extensions/types.ts";
 import {
 	type BashOperations,
@@ -781,6 +782,29 @@ describe("Coding Agent Tools", () => {
 
 			expect(result.exitCode).toBe(0);
 			expect(result.output).toBe("red\n");
+		});
+
+		it("fails closed when interactive bash operations return a null exit code", async () => {
+			const operations: BashOperations = {
+				exec: async (_command, _cwd, { onData }) => {
+					onData(Buffer.from("partial output\n", "utf-8"));
+					return { exitCode: null };
+				},
+			};
+			const result = await executeBashWithOperations("remote", testDir, operations);
+
+			expect(result.exitCode).toBe(1);
+			expect(
+				bashExecutionToText({
+					role: "bashExecution",
+					command: "remote",
+					output: result.output,
+					exitCode: result.exitCode,
+					cancelled: result.cancelled,
+					truncated: result.truncated,
+					timestamp: 0,
+				}),
+			).toContain("Command exited with code 1");
 		});
 
 		it("should persist full output when truncation happens by line count only", async () => {

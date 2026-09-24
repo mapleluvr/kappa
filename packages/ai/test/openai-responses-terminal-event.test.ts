@@ -214,6 +214,19 @@ describe("OpenAI Responses terminal event handling", () => {
 		);
 	});
 
+	it.each([
+		{ provider: "azure-openai-responses", name: "Azure OpenAI" },
+		{ provider: "openai-codex", name: "Codex" },
+	])("uses the display name for $provider early EOF", async ({ provider, name }) => {
+		const model = { ...createModel(), provider };
+		const output = createOutput(model);
+		const stream = new AssistantMessageEventStream();
+
+		await expect(processResponsesStream(createEarlyEofEvents(), output, stream, model)).rejects.toThrow(
+			`${name} Responses stream ended before a terminal response event`,
+		);
+	});
+
 	it("emits an error final result when the wrapper stream ends before a terminal response event", async () => {
 		const model = createModel();
 		const context: Context = {
