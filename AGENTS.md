@@ -12,8 +12,13 @@
 - When the user asks a question, answer it first before making edits or running implementation commands.
 - When responding to user feedback or an analysis, explicitly say whether you agree or disagree before saying what you changed.
 
-## Code Quality
+## Subagents
 
+- Use `async` mode by default for subagent runs.
+- Set the default subagent timeout to 90 minutes (`timeoutMs: 5400000`) unless a task requires a shorter bound.
+- When a subagent encounters a problem, resume it before starting a replacement unless the failure is a connectivity issue.
+
+## Code Quality
 - Read files in full before wide-ranging changes, before editing files you have not fully inspected, and when asked to investigate or audit. Do not rely on search snippets for broad changes.
 - No `any` unless absolutely necessary.
 - Inline single-line helpers that have only one call site.
