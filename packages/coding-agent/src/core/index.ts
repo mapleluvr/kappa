@@ -72,12 +72,19 @@ export {
 export type { CompactionResult } from "./compaction/index.ts";
 export {
 	type ActivateStrategyResult,
+	type AuthorizeCutResult,
+	bindContextStrategy,
 	CONTEXT_STRATEGY_DEFAULT_ENTRY_ID,
 	type ConfigureStrategyRequest,
 	type ConfigureStrategyResult,
+	type ContextStrategyHandle,
 	ContextStrategyManagement,
+	type CutCaller,
+	type CutDecision,
+	type CutPolicy,
 	type DeactivateStrategyResult,
 	type DeleteStrategyResult,
+	type SetCutPolicyResult,
 	type StrategyEntryRecord,
 	type StrategyEntryState,
 	type StrategyQuerySnapshot,
@@ -88,6 +95,11 @@ export {
 	NATIVE_COMPACTION_DISABLED_CODE,
 	NATIVE_COMPACTION_DISABLED_MESSAGE,
 } from "./context-strategy/native-compaction.ts";
+export {
+	type CommitWorkingSetCutResult,
+	commitWorkingSetCut,
+	type WorkingSetCut,
+} from "./context-strategy/working-set-cut.ts";
 export { createEventBus, type EventBus, type EventBusController } from "./event-bus.ts";
 export { areExperimentalFeaturesEnabled } from "./experimental.ts";
 // Extensions system

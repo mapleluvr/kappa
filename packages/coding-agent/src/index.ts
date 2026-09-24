@@ -53,10 +53,6 @@ export {
 	KAPPA_SOURCE_PIN,
 	sealC2ClaimReceipt,
 } from "./core/c2-claim-receipt.ts";
-export {
-	NATIVE_COMPACTION_DISABLED_CODE,
-	NATIVE_COMPACTION_DISABLED_MESSAGE,
-} from "./core/context-strategy/native-compaction.ts";
 // Compaction
 export {
 	type BranchPreparation,
@@ -78,23 +74,40 @@ export {
 	generateSummaryWithUsage,
 	getLastAssistantUsage,
 	prepareBranchEntries,
+	prepareCompaction,
 	serializeConversation,
 	shouldCompact,
 } from "./core/compaction/index.ts";
 export {
 	type ActivateStrategyResult,
+	type AuthorizeCutResult,
+	bindContextStrategy,
 	CONTEXT_STRATEGY_DEFAULT_ENTRY_ID,
 	type ConfigureStrategyRequest,
 	type ConfigureStrategyResult,
+	type ContextStrategyHandle,
 	ContextStrategyManagement,
+	type CutCaller,
+	type CutDecision,
+	type CutPolicy,
 	type DeactivateStrategyResult,
 	type DeleteStrategyResult,
+	type SetCutPolicyResult,
 	type StrategyEntryRecord,
 	type StrategyEntryState,
 	type StrategyQuerySnapshot,
 	WRITE_HOOK_CONTEXT_ARTIFACTS,
 	WRITE_HOOK_REAL_CONTEXT,
 } from "./core/context-strategy/management.ts";
+export {
+	NATIVE_COMPACTION_DISABLED_CODE,
+	NATIVE_COMPACTION_DISABLED_MESSAGE,
+} from "./core/context-strategy/native-compaction.ts";
+export {
+	type CommitWorkingSetCutResult,
+	commitWorkingSetCut,
+	type WorkingSetCut,
+} from "./core/context-strategy/working-set-cut.ts";
 export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.ts";
 // Extension system
 export type {

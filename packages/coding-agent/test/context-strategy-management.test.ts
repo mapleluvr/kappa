@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	bindContextStrategy,
 	CONTEXT_STRATEGY_DEFAULT_ENTRY_ID,
 	ContextStrategyManagement,
 	WRITE_HOOK_CONTEXT_ARTIFACTS,
@@ -34,6 +35,60 @@ describe("Context Strategy management", () => {
 				state: "inactive",
 			},
 		]);
+	});
+
+	it("prevents one extension from taking or releasing another extension's strategy", () => {
+		const mgmt = management();
+		const owner = bindContextStrategy(mgmt, { extension: "/extensions/owner.ts" });
+		const other = bindContextStrategy(mgmt, { extension: "/extensions/other.ts" });
+
+		expect(
+			owner.configure({
+				entryId: "owner-entry",
+				implementationRef: "owner",
+				reads: [],
+				writes: [WRITE_HOOK_REAL_CONTEXT],
+			}),
+		).toEqual({ ok: true, entryId: "owner-entry" });
+		expect(owner.activate("owner-entry")).toEqual({ ok: true, entryId: "owner-entry" });
+		expect(
+			other.configure({
+				entryId: "other-entry",
+				implementationRef: "other",
+				reads: [],
+				writes: [WRITE_HOOK_REAL_CONTEXT],
+			}),
+		).toEqual({ ok: true, entryId: "other-entry" });
+
+		expect(other.deactivate("owner-entry")).toEqual({ ok: false, code: "not_owner", entryId: "owner-entry" });
+		expect(other.activate("owner-entry")).toEqual({ ok: false, code: "not_owner", entryId: "owner-entry" });
+		expect(other.delete("owner-entry")).toEqual({ ok: false, code: "not_owner", entryId: "owner-entry" });
+		expect(other.activate("other-entry")).toEqual({
+			ok: false,
+			code: "hook_occupied",
+			entryId: "other-entry",
+			hook: WRITE_HOOK_REAL_CONTEXT,
+			owner: "owner-entry",
+		});
+		expect(mgmt.query().writeOwners).toEqual({ [WRITE_HOOK_REAL_CONTEXT]: "owner-entry" });
+		expect(mgmt.query().activeEntryIds).toEqual(["owner-entry"]);
+	});
+
+	it("prevents a non-owner from reactivating an inactive owned entry", () => {
+		const mgmt = management();
+		const owner = bindContextStrategy(mgmt, { extension: "/extensions/owner.ts" });
+		const other = bindContextStrategy(mgmt, { extension: "/extensions/other.ts" });
+		owner.configure({
+			entryId: "owned",
+			implementationRef: "owner",
+			reads: [],
+			writes: [WRITE_HOOK_REAL_CONTEXT],
+		});
+		owner.activate("owned");
+		owner.deactivate("owned");
+
+		expect(other.activate("owned")).toEqual({ ok: false, code: "not_owner", entryId: "owned" });
+		expect(mgmt.query().writeOwners).toEqual({});
 	});
 
 	it("rejects a second configure for the same entryId", () => {

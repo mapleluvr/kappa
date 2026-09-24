@@ -269,6 +269,10 @@ const noOpUIContext: ExtensionUIContext = {
 export class ExtensionRunner {
 	private extensions: Extension[];
 	private runtime: ExtensionRuntime;
+
+	get contextStrategyManagement() {
+		return this.runtime.contextStrategyManagement;
+	}
 	private uiContext: ExtensionUIContext;
 	private mode: ExtensionMode = "print";
 	private cwd: string;
@@ -338,6 +342,7 @@ export class ExtensionRunner {
 		this.runtime.setModel = actions.setModel;
 		this.runtime.getThinkingLevel = actions.getThinkingLevel;
 		this.runtime.setThinkingLevel = actions.setThinkingLevel;
+		this.runtime.commitWorkingSetCut = actions.commitWorkingSetCut;
 
 		// Context actions (required)
 		this.getModel = contextActions.getModel;

@@ -6,7 +6,7 @@
  * - Agent state access
  * - Event subscription with automatic session persistence
  * - Model and thinking level management
- * - Compaction (manual and auto)
+ * - Working-set cuts applied by a Context Strategy extension (this class is not a compaction service)
  * - Bash execution
  * - Session switching and branching
  *
@@ -61,7 +61,6 @@ import {
 	C2RefusedError,
 	type C2Result,
 } from "./c2-ingress.ts";
-import { NATIVE_COMPACTION_DISABLED_MESSAGE } from "./context-strategy/native-compaction.ts";
 import {
 	type CompactionResult,
 	calculateContextTokens,
@@ -69,6 +68,8 @@ import {
 	estimateContextTokens,
 	generateBranchSummary,
 } from "./compaction/index.ts";
+import { NATIVE_COMPACTION_DISABLED_MESSAGE } from "./context-strategy/native-compaction.ts";
+import { commitWorkingSetCut } from "./context-strategy/working-set-cut.ts";
 import { DEFAULT_THINKING_LEVEL, THINKING_LEVEL_OPTIONS } from "./defaults.ts";
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.ts";
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.ts";
@@ -104,7 +105,7 @@ import type { ModelRuntime } from "./model-runtime.ts";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.ts";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
 import { exportSessionToJsonl } from "./session-export.ts";
-import type { BranchSummaryEntry, SessionEntry, SessionManager } from "./session-manager.ts";
+import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "./session-manager.ts";
 import { getLatestCompactionEntry } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
@@ -158,6 +159,7 @@ export type AgentSessionEvent =
 	  }
 	| { type: "compaction_start"; reason: "manual" | "threshold" | "overflow" }
 	| { type: "entry_appended"; entry: SessionEntry }
+	| { type: "working_set_cut"; entry: CompactionEntry }
 	| { type: "session_info_changed"; name: string | undefined }
 	| { type: "thinking_level_changed"; level: ThinkingLevel }
 	| {
@@ -2080,10 +2082,10 @@ export class AgentSession {
 	}
 
 	// =========================================================================
-	// Compaction
+	// Compaction (not a host service)
 	// =========================================================================
 
-	/** Native Pi compaction is detached. Context Strategy owns `real_context.write`. */
+	/** Compaction is implemented by a kappa extension. This method is not a service. */
 	async compact(_customInstructions?: string): Promise<CompactionResult> {
 		throw new Error(NATIVE_COMPACTION_DISABLED_MESSAGE);
 	}
@@ -2290,6 +2292,26 @@ export class AgentSession {
 				},
 				getThinkingLevel: () => this.thinkingLevel,
 				setThinkingLevel: (level) => this.setThinkingLevel(level),
+				commitWorkingSetCut: (cut, caller) => {
+					const result = commitWorkingSetCut({
+						management: runner.contextStrategyManagement,
+						sessionManager: this.sessionManager,
+						setMessages: (messages) => {
+							this.agent.state.messages = messages;
+						},
+						isIdle: () => this.isIdle,
+						caller,
+						cut,
+					});
+					if (result.ok) {
+						const entry = this.sessionManager.getEntries().find((candidate) => candidate.id === result.entryId);
+						if (entry?.type !== "compaction") {
+							throw new Error("Committed working-set cut is missing from the session");
+						}
+						this._emit({ type: "working_set_cut", entry });
+					}
+					return result;
+				},
 			},
 			{
 				getModel: () => this.model,

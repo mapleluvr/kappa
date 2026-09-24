@@ -26,6 +26,7 @@ import { CONFIG_DIR_NAME, getAgentDir, isBunBinary, isBundledNode } from "../../
 // avoiding a circular dependency. Extensions can import from @mapleluvr/kappa-coding-agent.
 import * as _bundledPiCodingAgent from "../../index.ts";
 import { resolvePath } from "../../utils/paths.ts";
+import { bindContextStrategy, ContextStrategyManagement } from "../context-strategy/management.ts";
 import { createEventBus, type EventBus } from "../event-bus.ts";
 import type { ExecOptions } from "../exec.ts";
 import { execCommand } from "../exec.ts";
@@ -187,6 +188,7 @@ export function createExtensionRuntime(): ExtensionRuntime {
 	};
 
 	const runtime: ExtensionRuntime = {
+		contextStrategyManagement: new ContextStrategyManagement(),
 		sendMessage: notInitialized,
 		sendUserMessage: notInitialized,
 		appendEntry: notInitialized,
@@ -202,6 +204,7 @@ export function createExtensionRuntime(): ExtensionRuntime {
 		setModel: () => Promise.reject(new Error("Extension runtime not initialized")),
 		getThinkingLevel: notInitialized,
 		setThinkingLevel: notInitialized,
+		commitWorkingSetCut: notInitialized as ExtensionRuntime["commitWorkingSetCut"],
 		flagValues: new Map(),
 		pendingProviderRegistrations: [],
 		pendingNativeProviderRegistrations: [],
@@ -370,6 +373,16 @@ function createExtensionAPI(
 		appendEntry(customType: string, data?: unknown): void {
 			assertActive();
 			runtime.appendEntry(customType, data);
+		},
+
+		get contextStrategy() {
+			assertActive();
+			const caller = { extension: extension.path };
+			return {
+				management: bindContextStrategy(runtime.contextStrategyManagement, caller),
+				commitCut: (cut: Parameters<ExtensionRuntime["commitWorkingSetCut"]>[0]) =>
+					runtime.commitWorkingSetCut(cut, caller),
+			};
 		},
 
 		setSessionName(name: string): void {
@@ -675,7 +688,7 @@ function isExtensionFile(name: string): boolean {
  * Returns resolved paths or null if no entry points found.
  */
 function resolveExtensionEntries(dir: string): string[] | null {
-	// Check for package.json with "kappa"/"pi" manifest first
+	// Check for package.json with "pi" field first
 	const packageJsonPath = path.join(dir, "package.json");
 	if (fs.existsSync(packageJsonPath)) {
 		const manifest = readPiManifest(packageJsonPath);

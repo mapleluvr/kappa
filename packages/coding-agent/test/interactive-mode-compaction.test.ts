@@ -197,6 +197,63 @@ describe("InteractiveMode compaction events", () => {
 		expect(fakeThis.flushCompactionQueue).toHaveBeenCalledWith({ willRetry: false });
 	});
 
+	test("refreshes the transcript after a committed working-set cut without ending compaction", async () => {
+		const usage: Usage = {
+			input: 10,
+			output: 20,
+			cacheRead: 30,
+			cacheWrite: 40,
+			totalTokens: 100,
+			cost: { input: 0.01, output: 0.02, cacheRead: 0.03, cacheWrite: 0.04, total: 0.1 },
+		};
+		const cutEntry: SessionEntry = {
+			type: "compaction",
+			id: "cut-1",
+			parentId: "kept",
+			timestamp: "2025-01-02T00:00:00Z",
+			summary: "working summary",
+			firstKeptEntryId: "kept",
+			tokensBefore: 200,
+			usage,
+			fromHook: true,
+			authorExtension: "D:/extensions/reducer/index.ts",
+		};
+		const retainedEntry: SessionEntry = {
+			type: "message",
+			id: "kept",
+			parentId: null,
+			timestamp: "2025-01-01T00:00:00Z",
+			message: { role: "user", content: "retained" },
+		};
+		const fakeThis = {
+			isInitialized: true,
+			footer: { invalidate: vi.fn() },
+			chatContainer: { clear: vi.fn() },
+			sessionManager: { buildContextEntries: vi.fn().mockReturnValue([cutEntry, retainedEntry]) },
+			renderSessionEntries: vi.fn(),
+			addMessageToChat: vi.fn(),
+			addCompactionCostNotice: vi.fn(),
+			flushCompactionQueue: vi.fn(),
+			ui: { requestRender: vi.fn() },
+		};
+		const handleEvent = Reflect.get(InteractiveMode.prototype, "handleEvent") as (
+			this: typeof fakeThis,
+			event: { type: "working_set_cut"; entry: Extract<SessionEntry, { type: "compaction" }> },
+		) => Promise<void>;
+
+		await handleEvent.call(fakeThis, { type: "working_set_cut", entry: cutEntry });
+
+		expect(fakeThis.chatContainer.clear).toHaveBeenCalledTimes(1);
+		expect(fakeThis.renderSessionEntries).toHaveBeenCalledWith([retainedEntry]);
+		expect(fakeThis.addMessageToChat).toHaveBeenCalledWith(
+			expect.objectContaining({ role: "compactionSummary", summary: "working summary", tokensBefore: 200 }),
+		);
+		expect(fakeThis.addCompactionCostNotice).toHaveBeenCalledWith({ type: "compaction_cost", kind: "compaction", usage });
+		expect(fakeThis.footer.invalidate).toHaveBeenCalledTimes(1);
+		expect(fakeThis.flushCompactionQueue).not.toHaveBeenCalled();
+		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(1);
+	});
+
 	test("updates the working state when the same agent run resumes after compaction", async () => {
 		const fakeThis = {
 			isInitialized: true,

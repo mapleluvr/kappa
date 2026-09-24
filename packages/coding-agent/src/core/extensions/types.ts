@@ -48,6 +48,8 @@ import type { Static, TSchema } from "typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.ts";
 import type { BashResult } from "../bash-executor.ts";
 import type { CompactionPreparation, CompactionResult } from "../compaction/index.ts";
+import type { ContextStrategyHandle, ContextStrategyManagement } from "../context-strategy/management.ts";
+import type { CommitWorkingSetCutResult, WorkingSetCut } from "../context-strategy/working-set-cut.ts";
 import type { EventBus } from "../event-bus.ts";
 import type { ExecOptions, ExecResult } from "../exec.ts";
 import type { ReadonlyFooterDataProvider } from "../footer-data-provider.ts";
@@ -342,7 +344,7 @@ export interface ExtensionContext {
 	shutdown(): void;
 	/** Get current context usage for the active model. */
 	getContextUsage(): ContextUsage | undefined;
-	/** Trigger compaction without awaiting completion. */
+	/** Removed as a host service. Compaction is implemented by a kappa extension. */
 	compact(options?: CompactOptions): void;
 	/** Get the current effective system prompt. */
 	getSystemPrompt(): string;
@@ -1380,6 +1382,15 @@ export interface ExtensionAPI {
 	/** Append a custom entry to the session for state persistence (not sent to LLM). */
 	appendEntry<T = unknown>(customType: string, data?: T): void;
 
+	/**
+	 * Session-scoped Context Strategy occupancy and working-set writes.
+	 * `commitCut` is injected with this extension's path; only the hook owner (or its policy) may write.
+	 */
+	readonly contextStrategy: {
+		management: ContextStrategyHandle;
+		commitCut: (cut: WorkingSetCut) => CommitWorkingSetCutResult;
+	};
+
 	// =========================================================================
 	// Session Metadata
 	// =========================================================================
@@ -1662,12 +1673,19 @@ export type SetThinkingLevelHandler = (level: ThinkingLevel) => void;
 
 export type SetLabelHandler = (entryId: string, label: string | undefined) => void;
 
+export type CommitWorkingSetCutHandler = (
+	cut: WorkingSetCut,
+	caller: { extension: string },
+) => CommitWorkingSetCutResult;
+
 /**
  * Shared state created by loader, used during registration and runtime.
  * Contains flag values (defaults set during registration, CLI values set after).
  */
 export interface ExtensionRuntimeState {
 	flagValues: Map<string, boolean | string>;
+	/** One occupancy table per session, shared by every loaded extension. */
+	contextStrategyManagement: ContextStrategyManagement;
 	/** Legacy provider-config registrations queued during extension loading, processed when runner binds. */
 	pendingProviderRegistrations: Array<{ name: string; config: ProviderConfig; extensionPath: string }>;
 	/** Native pi-ai provider registrations queued during extension loading, processed when runner binds. */
@@ -1708,6 +1726,7 @@ export interface ExtensionActions {
 	setModel: SetModelHandler;
 	getThinkingLevel: GetThinkingLevelHandler;
 	setThinkingLevel: SetThinkingLevelHandler;
+	commitWorkingSetCut: CommitWorkingSetCutHandler;
 }
 
 /**

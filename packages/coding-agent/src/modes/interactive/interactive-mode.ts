@@ -3210,6 +3210,27 @@ export class InteractiveMode {
 				}
 				break;
 
+			case "working_set_cut": {
+				const entries = this.sessionManager.buildContextEntries();
+				if (entries[0]?.type !== "compaction" || entries[0].id !== event.entry.id) {
+					throw new Error("Committed working-set cut is missing from the session context");
+				}
+				this.chatContainer.clear();
+				this.renderSessionEntries(entries.slice(1));
+				this.addMessageToChat(
+					createCompactionSummaryMessage(event.entry.summary, event.entry.tokensBefore, event.entry.timestamp),
+				);
+				if (event.entry.usage) {
+					this.addCompactionCostNotice({
+						type: "compaction_cost",
+						kind: "compaction",
+						usage: event.entry.usage,
+					});
+				}
+				this.ui.requestRender();
+				break;
+			}
+
 			case "session_info_changed":
 				this.updateTerminalTitle();
 				this.footer.invalidate();
