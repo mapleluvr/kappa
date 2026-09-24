@@ -17,19 +17,31 @@ function isObject(value: unknown): value is Record<string, unknown> {
 export function readPiManifest(packageJsonPath: string): PiManifest | null {
 	try {
 		const pkg: unknown = JSON.parse(stripBom(readFileSync(packageJsonPath, "utf-8")));
-		if (!isObject(pkg) || !isObject(pkg.pi)) {
+		if (!isObject(pkg)) {
+			return null;
+		}
+		const kappa = isObject(pkg.kappa) ? pkg.kappa : undefined;
+		const pi = isObject(pkg.pi) ? pkg.pi : undefined;
+		if (!kappa && !pi) {
 			return null;
 		}
 
 		const manifest: PiManifest = {};
 		for (const field of RESOURCE_FIELDS) {
-			const entries = pkg.pi[field];
-			if (Array.isArray(entries) && entries.every((entry) => typeof entry === "string")) {
-				manifest[field] = entries;
+			const preferred = readStringArray(kappa?.[field]) ?? readStringArray(pi?.[field]);
+			if (preferred) {
+				manifest[field] = preferred;
 			}
 		}
 		return manifest;
 	} catch {
 		return null;
 	}
+}
+
+function readStringArray(value: unknown): string[] | undefined {
+	if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
+		return value;
+	}
+	return undefined;
 }
