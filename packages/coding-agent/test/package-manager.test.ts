@@ -33,6 +33,10 @@ interface PackageManagerInternals {
 		options?: { cwd?: string; timeoutMs?: number; env?: Record<string, string> },
 	): Promise<string>;
 	getLocalGitUpdateTarget(installedPath: string): Promise<{ ref: string; head: string; fetchArgs: string[] }>;
+	collectManifestFiles(
+		packageRoot: string,
+		resourceType: "extensions",
+	): { allFiles: string[]; enabledByManifest: Set<string> };
 	parseSource(
 		source: string,
 	):
@@ -120,6 +124,29 @@ describe("DefaultPackageManager", () => {
 
 			const result = await packageManager.resolve();
 			expect(result.extensions.some((r) => r.path === extPath && r.enabled)).toBe(true);
+		});
+
+		it("does not auto-discover package resources when extensions are explicitly empty", () => {
+			const packageRoot = join(tempDir, "installed", "empty-extensions");
+			const conventionDir = join(packageRoot, "extensions");
+			mkdirSync(conventionDir, { recursive: true });
+			writeFileSync(
+				join(packageRoot, "package.json"),
+				JSON.stringify({
+					kappa: { extensions: [] },
+					pi: { extensions: ["./legacy.ts"] },
+				}),
+			);
+			writeFileSync(join(packageRoot, "legacy.ts"), "export default function() {}");
+			writeFileSync(join(conventionDir, "discovered.ts"), "export default function() {}");
+
+			const result = (packageManager as unknown as PackageManagerInternals).collectManifestFiles(
+				packageRoot,
+				"extensions",
+			);
+
+			expect(result.allFiles).toEqual([]);
+			expect(result.enabledByManifest.size).toBe(0);
 		});
 
 		it("should resolve skill paths from settings", async () => {
@@ -2627,6 +2654,22 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 				["view", "example", "version", "--json"],
 				expect.objectContaining({ cwd: tempDir, timeoutMs: expect.any(Number) }),
 			);
+		});
+
+		it("reports malformed npm view JSON as an invalid registry response", async () => {
+			vi.spyOn(packageManager as any, "runCommandCapture").mockResolvedValue("{");
+
+			await expect((packageManager as any).getLatestNpmVersion("example")).rejects.toThrow(
+				"Invalid JSON response from npm view",
+			);
+		});
+
+		it("returns no legacy pnpm package path for malformed global list JSON", () => {
+			settingsManager = SettingsManager.inMemory({ npmCommand: ["pnpm"] });
+			packageManager = new DefaultPackageManager({ cwd: tempDir, agentDir, settingsManager });
+			vi.spyOn(packageManager as any, "runNpmCommandSync").mockReturnValue("{");
+
+			expect((packageManager as any).getPnpmGlobalPackagePath("example")).toBeUndefined();
 		});
 
 		it("should use npmCommand argv for npm update checks", async () => {

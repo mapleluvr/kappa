@@ -230,6 +230,25 @@ describe("extensions discovery", () => {
 		expect(result.extensions[0].tools.has("from-index")).toBe(false);
 	});
 
+	it("does not fall back to index when kappa.extensions is explicitly empty", async () => {
+		const subdir = path.join(extensionsDir, "empty-manifest-package");
+		fs.mkdirSync(subdir);
+		fs.writeFileSync(path.join(subdir, "index.ts"), extensionCodeWithTool("from-index"));
+		fs.writeFileSync(path.join(subdir, "legacy.ts"), extensionCodeWithTool("from-legacy"));
+		fs.writeFileSync(
+			path.join(subdir, "package.json"),
+			JSON.stringify({
+				kappa: { extensions: [] },
+				pi: { extensions: ["./legacy.ts"] },
+			}),
+		);
+
+		const result = await discoverAndLoadExtensions([subdir], tempDir, tempDir);
+
+		expect(result.errors).toHaveLength(0);
+		expect(result.extensions).toHaveLength(0);
+	});
+
 	it("ignores package.json without pi field, falls back to index.ts", async () => {
 		const subdir = path.join(extensionsDir, "my-package");
 		fs.mkdirSync(subdir);

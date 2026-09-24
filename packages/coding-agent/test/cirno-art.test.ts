@@ -210,6 +210,29 @@ describe("cirno startup art", () => {
 		});
 	});
 
+	it("uses the same 24-row fallback as ProcessTerminal when stdout has no rows", () => {
+		const previousLines = process.env.LINES;
+		process.env.LINES = "24";
+		try {
+			withRows(undefined, () => {
+				const text = headerText();
+				const lines = new CirnoArtHeader(text).render(120);
+				expect(lines).toHaveLength(3);
+				expect(text.widths).toEqual([120]);
+			});
+		} finally {
+			if (previousLines === undefined) delete process.env.LINES;
+			else process.env.LINES = previousLines;
+		}
+	});
+
+	it("preserves a low-saturation tint in 256-color mode", () => {
+		const source = { pixels: 4, hex: "505a50".repeat(16) };
+		const line = renderCirnoArt(source, "256color")[0]!;
+		expect(line).toContain("\x1b[38;5;59m");
+		expect(line).not.toContain("\x1b[38;5;240m");
+	});
+
 	it("forwards expansion to the wrapped header text", () => {
 		const text = headerText();
 		const header = new CirnoArtHeader(text);

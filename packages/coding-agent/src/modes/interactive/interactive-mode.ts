@@ -961,7 +961,7 @@ export class InteractiveMode {
 				0,
 			);
 			// 色块图排在启动文字左侧，图右是同一段文字；图放不下时自动退回纯文字
-			this.builtInHeader = new CirnoArtHeader(headerText);
+			this.builtInHeader = new CirnoArtHeader(headerText, () => this.ui.terminal.rows);
 
 			// Setup UI layout
 			this.headerContainer.addChild(new Spacer(1));

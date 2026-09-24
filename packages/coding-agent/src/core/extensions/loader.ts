@@ -675,21 +675,19 @@ function isExtensionFile(name: string): boolean {
  * Returns resolved paths or null if no entry points found.
  */
 function resolveExtensionEntries(dir: string): string[] | null {
-	// Check for package.json with "pi" field first
+	// Check for package.json with "kappa"/"pi" manifest first
 	const packageJsonPath = path.join(dir, "package.json");
 	if (fs.existsSync(packageJsonPath)) {
 		const manifest = readPiManifest(packageJsonPath);
-		if (manifest?.extensions?.length) {
+		if (manifest && Object.prototype.hasOwnProperty.call(manifest, "extensions")) {
 			const entries: string[] = [];
-			for (const extPath of manifest.extensions) {
+			for (const extPath of manifest.extensions ?? []) {
 				const resolvedExtPath = path.resolve(dir, extPath);
 				if (fs.existsSync(resolvedExtPath)) {
 					entries.push(resolvedExtPath);
 				}
 			}
-			if (entries.length > 0) {
-				return entries;
-			}
+			return entries;
 		}
 	}
 

@@ -558,17 +558,15 @@ function resolveExtensionEntries(dir: string): string[] | null {
 	const packageJsonPath = join(dir, "package.json");
 	if (existsSync(packageJsonPath)) {
 		const manifest = readPiManifest(packageJsonPath);
-		if (manifest?.extensions?.length) {
+		if (manifest && Object.prototype.hasOwnProperty.call(manifest, "extensions")) {
 			const entries: string[] = [];
-			for (const extPath of manifest.extensions) {
+			for (const extPath of manifest.extensions ?? []) {
 				const resolvedExtPath = resolve(dir, extPath);
 				if (existsSync(resolvedExtPath)) {
 					entries.push(resolvedExtPath);
 				}
 			}
-			if (entries.length > 0) {
-				return entries;
-			}
+			return entries;
 		}
 	}
 
@@ -1517,7 +1515,12 @@ export class DefaultPackageManager implements PackageManager {
 		);
 		const raw = stdout.trim();
 		if (!raw) throw new Error("Empty response from npm view");
-		const parsed = JSON.parse(raw) as unknown;
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(raw) as unknown;
+		} catch {
+			throw new Error("Invalid JSON response from npm view");
+		}
 		if (typeof parsed === "string") {
 			return parsed;
 		}
@@ -2055,7 +2058,12 @@ export class DefaultPackageManager implements PackageManager {
 		}
 
 		const output = this.runNpmCommandSync(["list", "-g", "--depth", "0", "--json"]);
-		const entries = JSON.parse(output) as Array<{ dependencies?: Record<string, { path?: string }> }>;
+		let entries: Array<{ dependencies?: Record<string, { path?: string }> }>;
+		try {
+			entries = JSON.parse(output) as Array<{ dependencies?: Record<string, { path?: string }> }>;
+		} catch {
+			return undefined;
+		}
 		for (const entry of entries) {
 			const path = entry.dependencies?.[packageName]?.path;
 			if (path) return path;
@@ -2277,8 +2285,8 @@ export class DefaultPackageManager implements PackageManager {
 		resourceType: ResourceType,
 	): { allFiles: string[]; enabledByManifest: Set<string> } {
 		const manifest = readPiManifest(join(packageRoot, "package.json"));
-		const entries = manifest?.[resourceType as keyof PiManifest];
-		if (entries && entries.length > 0) {
+		if (manifest && Object.prototype.hasOwnProperty.call(manifest, resourceType)) {
+			const entries = manifest[resourceType] ?? [];
 			const allFiles = this.collectFilesFromManifestEntries(entries, packageRoot, resourceType);
 			const manifestPatterns = entries.filter(isOverridePattern);
 			const enabledByManifest =

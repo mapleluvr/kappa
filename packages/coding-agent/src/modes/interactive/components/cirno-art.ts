@@ -32,7 +32,7 @@ const MIN_TEXT_WIDTH = 44;
 /** 头部下面还有说明、加载项、警告、编辑器与页脚，再加上启动前终端里已经有的行，留够才不会被顶掉 */
 const ART_HEIGHT_RESERVE = 18;
 /** 拿不到终端高度时（测试、重定向）按这个行数算 */
-const DEFAULT_ROWS = 30;
+const DEFAULT_ROWS = 24;
 
 const RESET = "\x1b[0m";
 /** 透明段要把前景/背景显式置回默认，否则空格会沿用上一段落的颜色 */
@@ -61,7 +61,7 @@ function hexToRgb(hex: string): Rgb {
 	};
 }
 
-/** 6x6x6 色立方 + 24 级灰阶斜坡，取加权距离最近的一个；与主题内部的换算法等价 */
+/** Use the theme's weighted xterm palette distance and only choose grayscale for neutral colors. */
 const CUBE_VALUES = [0, 95, 135, 175, 215, 255];
 
 function nearestCubeIndex(value: number): number {
@@ -72,17 +72,34 @@ function nearestCubeIndex(value: number): number {
 	return best;
 }
 
+function nearestGrayIndex(value: number): number {
+	let best = 0;
+	for (let i = 1; i < 24; i++) {
+		const gray = 8 + i * 10;
+		if (Math.abs(gray - value) < Math.abs(8 + best * 10 - value)) best = i;
+	}
+	return best;
+}
+
+function colorDistance(a: Rgb, b: Rgb): number {
+	return (a.r - b.r) ** 2 * 0.299 + (a.g - b.g) ** 2 * 0.587 + (a.b - b.b) ** 2 * 0.114;
+}
+
 function rgbTo256({ r, g, b }: Rgb): number {
-	const cubeIndex = 16 + 36 * nearestCubeIndex(r) + 6 * nearestCubeIndex(g) + nearestCubeIndex(b);
-	const gray = Math.round((r * 0.299 + g * 0.587 + b * 0.114 - 8) / 10);
-	const grayIndex = Math.max(0, Math.min(23, gray));
+	const rIndex = nearestCubeIndex(r);
+	const gIndex = nearestCubeIndex(g);
+	const bIndex = nearestCubeIndex(b);
+	const cubeColor = { r: CUBE_VALUES[rIndex]!, g: CUBE_VALUES[gIndex]!, b: CUBE_VALUES[bIndex]! };
+	const cubeIndex = 16 + 36 * rIndex + 6 * gIndex + bIndex;
+	const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+	const grayIndex = nearestGrayIndex(gray);
 	const grayValue = 8 + grayIndex * 10;
-	const cubeDistance =
-		(r - CUBE_VALUES[nearestCubeIndex(r)]!) ** 2 +
-		(g - CUBE_VALUES[nearestCubeIndex(g)]!) ** 2 +
-		(b - CUBE_VALUES[nearestCubeIndex(b)]!) ** 2;
-	const grayDistance = (r - grayValue) ** 2 + (g - grayValue) ** 2 + (b - grayValue) ** 2;
-	return grayDistance < cubeDistance ? 232 + grayIndex : cubeIndex;
+	const grayColor = { r: grayValue, g: grayValue, b: grayValue };
+	const spread = Math.max(r, g, b) - Math.min(r, g, b);
+	if (spread < 10 && colorDistance({ r, g, b }, grayColor) < colorDistance({ r, g, b }, cubeColor)) {
+		return 232 + grayIndex;
+	}
+	return cubeIndex;
 }
 
 function isBackground(hex: string): boolean {
@@ -191,6 +208,10 @@ function rowToAnsi(row: Cell[], mode: ArtColorMode): string {
 	return line.length > 0 ? `${line}${RESET}` : line;
 }
 
+function getTerminalRows(): number {
+	return process.stdout.rows || Number(process.env.LINES) || DEFAULT_ROWS;
+}
+
 /**
  * 挑选头部左侧要用的档位：从大到小取第一个放得下的。
  *
@@ -226,9 +247,11 @@ function lineAt(lines: string[], index: number, artWidth: number): string {
  */
 export class CirnoArtHeader implements Component {
 	private readonly text: Component;
+	private readonly getRows: () => number;
 
-	constructor(text: Component) {
+	constructor(text: Component, getRows: () => number = getTerminalRows) {
 		this.text = text;
+		this.getRows = getRows;
 	}
 
 	setExpanded(expanded: boolean): void {
@@ -241,8 +264,7 @@ export class CirnoArtHeader implements Component {
 	}
 
 	render(width: number): string[] {
-		const rows = process.stdout.rows ?? DEFAULT_ROWS;
-		const source = pickCirnoArt(width, rows);
+		const source = pickCirnoArt(width, this.getRows());
 		if (!source) return this.text.render(width);
 		const textWidth = Math.max(1, width - source.pixels - ART_GAP);
 		const artLines = renderCirnoArt(source, theme.getColorMode());
