@@ -227,6 +227,8 @@ Response:
     "followUpMode": "one-at-a-time",
     "sessionFile": "/path/to/session.jsonl",
     "sessionId": "abc123",
+    "branchId": "entry-abc",
+    "revision": 5,
     "sessionName": "my-feature-work",
     "autoCompactionEnabled": true,
     "messageCount": 5,

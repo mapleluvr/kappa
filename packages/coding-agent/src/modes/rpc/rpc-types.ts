@@ -110,6 +110,8 @@ export interface RpcSessionState {
 	followUpMode: "all" | "one-at-a-time";
 	sessionFile?: string;
 	sessionId: string;
+	branchId: string;
+	revision: number;
 	sessionName?: string;
 	autoCompactionEnabled: boolean;
 	messageCount: number;

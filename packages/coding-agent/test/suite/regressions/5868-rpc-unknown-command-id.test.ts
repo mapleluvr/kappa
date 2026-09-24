@@ -110,4 +110,27 @@ describe("RPC unknown command responses (#5868)", () => {
 			restoreListeners(listenerSnapshot);
 		}
 	});
+
+	test("get_state returns native session branch and tree revision", async () => {
+		const listenerSnapshot = takeListenerSnapshot();
+		const harness = await createHarness();
+
+		try {
+			void runRpcMode(createRuntimeHost(harness));
+			await vi.waitFor(() => expect(rpcIo.lineHandler).toBeDefined());
+			rpcIo.lineHandler?.(JSON.stringify({ id: "state", type: "get_state" }));
+
+			await vi.waitFor(() => {
+				const response = parseOutputLines().find((line) => line.id === "state");
+				expect(response?.data).toMatchObject({
+					sessionId: harness.session.sessionId,
+					branchId: "leaf:empty",
+					revision: 0,
+				});
+			});
+		} finally {
+			harness.cleanup();
+			restoreListeners(listenerSnapshot);
+		}
+	});
 });

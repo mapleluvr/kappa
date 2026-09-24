@@ -469,6 +469,8 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					followUpMode: session.followUpMode,
 					sessionFile: session.sessionFile,
 					sessionId: session.sessionId,
+					branchId: session.sessionManager.getLeafId() ?? C2_EMPTY_LEAF_ID,
+					revision: session.sessionManager.getTreeRevision(),
 					sessionName: session.sessionName,
 					autoCompactionEnabled: session.autoCompactionEnabled,
 					messageCount: session.messages.length,
