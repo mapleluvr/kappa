@@ -49,6 +49,7 @@ export default defineConfig({
 			{ find: /^@earendil-works\/pi-server$/, replacement: workspaceSourcePaths.serverIndex },
 			{ find: /^@earendil-works\/pi-server\/unix$/, replacement: workspaceSourcePaths.serverUnix },
 			{ find: /^@earendil-works\/pi-tui$/, replacement: workspaceSourcePaths.tuiIndex },
+			{ find: /^@mapleluvr\/kappa-tui$/, replacement: workspaceSourcePaths.tuiIndex },
 		],
 	},
 });

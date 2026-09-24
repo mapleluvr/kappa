@@ -55,7 +55,6 @@ import {
 	VERSION,
 } from "../../config.ts";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.ts";
-import { NATIVE_COMPACTION_DISABLED_MESSAGE } from "../../core/context-strategy/native-compaction.ts";
 import { type AgentSessionRuntime, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.ts";
 import type { AgentSessionRuntimeDiagnostic } from "../../core/agent-session-services.ts";
 import {
@@ -65,6 +64,7 @@ import {
 	computeCacheWaste,
 	detectCacheMiss,
 } from "../../core/cache-stats.ts";
+import { NATIVE_COMPACTION_DISABLED_MESSAGE } from "../../core/context-strategy/native-compaction.ts";
 import { DEFAULT_THINKING_LEVEL, THINKING_LEVEL_OPTIONS } from "../../core/defaults.ts";
 import type {
 	AutocompleteProviderFactory,
@@ -116,6 +116,7 @@ import { ArminComponent } from "./components/armin.ts";
 import { AssistantMessageComponent } from "./components/assistant-message.ts";
 import { BashExecutionComponent } from "./components/bash-execution.ts";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.ts";
+import { CirnoArtHeader } from "./components/cirno-art.ts";
 import { CompactionSummaryMessageComponent } from "./components/compaction-summary-message.ts";
 import { CustomEditor } from "./components/custom-editor.ts";
 import { CustomEntryComponent } from "./components/custom-entry.ts";
@@ -952,13 +953,15 @@ export class InteractiveMode {
 				"dim",
 				`Kappa can explain its own features and look up its docs. Ask it how to use or extend Kappa.`,
 			);
-			this.builtInHeader = new ExpandableText(
+			const headerText = new ExpandableText(
 				() => `${logo}\n${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`,
 				() => `${logo}\n${expandedInstructions}\n\n${onboarding}`,
 				this.getStartupExpansionState(),
 				1,
 				0,
 			);
+			// 色块图排在启动文字左侧，图右是同一段文字；图放不下时自动退回纯文字
+			this.builtInHeader = new CirnoArtHeader(headerText);
 
 			// Setup UI layout
 			this.headerContainer.addChild(new Spacer(1));
