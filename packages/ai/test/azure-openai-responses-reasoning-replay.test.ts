@@ -79,6 +79,17 @@ function getReplayedReasoning(model: Model<"azure-openai-responses">, assistant:
 }
 
 describe("Azure OpenAI Responses reasoning replay", () => {
+	it.each(["{not-json", JSON.stringify("not a reasoning item")])(
+		"rejects malformed stored reasoning signatures",
+		(signature) => {
+			const model = createModel();
+			const assistant = createOutput(model);
+			assistant.content.push({ type: "thinking", thinking: "reasoning", thinkingSignature: signature });
+
+			expect(() => getReplayedReasoning(model, assistant)).toThrow("Invalid OpenAI Responses reasoning signature");
+		},
+	);
+
 	it("preserves existing encrypted_content from output_item.done", async () => {
 		const model = createModel();
 		const output = createOutput(model);

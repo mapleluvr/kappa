@@ -172,6 +172,29 @@ describe("OpenAI Responses tool-call namespaces", () => {
 		});
 	});
 
+	it("preserves custom-tool IDs across models from the same provider", () => {
+		const output = createOutput();
+		output.content.push({
+			type: "toolCall",
+			id: "call_custom|ctc_test",
+			name: "query",
+			arguments: { input: "hello" },
+		});
+
+		const targetModel = { ...model, id: "gpt-5.2", name: "GPT-5.2" };
+		const replayed = convertResponsesMessages(targetModel, { messages: [output] }, new Set(["openai"]), {
+			grammarToolInputProperties: new Map([["query", "input"]]),
+		}).find((item) => item.type === "custom_tool_call");
+
+		expect(replayed).toMatchObject({
+			type: "custom_tool_call",
+			id: "ctc_test",
+			call_id: "call_custom",
+			name: "query",
+			input: "hello",
+		});
+	});
+
 	it("drops namespaces when the target cannot replay their load items", () => {
 		const output = createOutput();
 		output.content.push(

@@ -2,8 +2,9 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
 import { stream as streamAnthropic } from "../src/api/anthropic-messages.ts";
+import { transformMessages } from "../src/api/transform-messages.ts";
 import { getModel } from "../src/compat.ts";
-import type { Context, ToolCall } from "../src/types.ts";
+import type { Context, Model, ToolCall } from "../src/types.ts";
 
 function createSseResponse(events: Array<{ event: string; data: string }>): Response {
 	const body = events.map(({ event, data }) => `event: ${event}\ndata: ${data}\n`).join("\n");
@@ -80,7 +81,305 @@ function createFakeAnthropicClient(response: Response): Anthropic {
 	} as unknown as Anthropic;
 }
 
+type ResponseContentBlock = { type: "thinking"; thinking: string; signature: string } | { type: "text"; text: string };
+
+function createResponseModelSseResponse(model: string, contentBlock: ResponseContentBlock): Response {
+	return createSseResponse([
+		{
+			event: "message_start",
+			data: JSON.stringify({
+				type: "message_start",
+				message: { id: "msg_response_model", model, usage: { input_tokens: 100, output_tokens: 0 } },
+			}),
+		},
+		{
+			event: "content_block_start",
+			data: JSON.stringify({ type: "content_block_start", index: 0, content_block: contentBlock }),
+		},
+		{ event: "content_block_stop", data: JSON.stringify({ type: "content_block_stop", index: 0 }) },
+		{
+			event: "message_delta",
+			data: JSON.stringify({
+				type: "message_delta",
+				delta: { stop_reason: "end_turn" },
+				usage: { input_tokens: 100, output_tokens: 20 },
+			}),
+		},
+		{ event: "message_stop", data: JSON.stringify({ type: "message_stop" }) },
+	]);
+}
+
+function createServedFallbackSseResponse(
+	fallbackModel: string,
+	source: "block" | "iterations" | "start-iterations",
+): Response {
+	const startUsage: Record<string, unknown> = { input_tokens: 100, output_tokens: 0 };
+	if (source === "start-iterations") {
+		startUsage.iterations = [
+			{
+				type: "message",
+				model: "claude-opus-5",
+				input_tokens: 100,
+				output_tokens: 0,
+				cache_read_input_tokens: 0,
+				cache_creation_input_tokens: 0,
+				cache_creation: null,
+			},
+			{
+				type: "fallback_message",
+				model: fallbackModel,
+				input_tokens: 100,
+				output_tokens: 20,
+				cache_read_input_tokens: 0,
+				cache_creation_input_tokens: 0,
+				cache_creation: null,
+			},
+		];
+	}
+	const events: Array<{ event: string; data: string }> = [
+		{
+			event: "message_start",
+			data: JSON.stringify({
+				type: "message_start",
+				message: { id: "msg_fallback", model: "claude-opus-5", usage: startUsage },
+			}),
+		},
+	];
+	let contentIndex = 0;
+
+	if (source === "block") {
+		events.push(
+			{
+				event: "content_block_start",
+				data: JSON.stringify({
+					type: "content_block_start",
+					index: contentIndex++,
+					content_block: {
+						type: "fallback",
+						from: { model: "claude-opus-5" },
+						to: { model: fallbackModel },
+						trigger: { type: "refusal", category: "general_harms" },
+					},
+				}),
+			},
+			{
+				event: "content_block_stop",
+				data: JSON.stringify({ type: "content_block_stop", index: contentIndex - 1 }),
+			},
+		);
+	}
+
+	events.push(
+		{
+			event: "content_block_start",
+			data: JSON.stringify({
+				type: "content_block_start",
+				index: contentIndex,
+				content_block: { type: "text", text: "done" },
+			}),
+		},
+		{
+			event: "content_block_stop",
+			data: JSON.stringify({ type: "content_block_stop", index: contentIndex }),
+		},
+	);
+
+	const usage: Record<string, unknown> = { input_tokens: 100, output_tokens: 20 };
+	if (source === "iterations") {
+		usage.iterations = [
+			{
+				type: "message",
+				model: "claude-opus-5",
+				input_tokens: 100,
+				output_tokens: 0,
+				cache_read_input_tokens: 0,
+				cache_creation_input_tokens: 0,
+				cache_creation: null,
+			},
+			{
+				type: "fallback_message",
+				model: fallbackModel,
+				input_tokens: 100,
+				output_tokens: 20,
+				cache_read_input_tokens: 0,
+				cache_creation_input_tokens: 0,
+				cache_creation: null,
+			},
+		];
+	}
+	events.push(
+		{
+			event: "message_delta",
+			data: JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn" }, usage }),
+		},
+		{ event: "message_stop", data: JSON.stringify({ type: "message_stop" }) },
+	);
+	return createSseResponse(events);
+}
+
+function createAllowedFallbackModel(fallbackModel: string): Model<"anthropic-messages"> {
+	return {
+		...getModel("anthropic", "claude-opus-5"),
+		compat: {
+			allowedFallbackModels: [
+				{
+					provider: "anthropic",
+					model: fallbackModel,
+					cost: { input: 3, output: 5, cacheRead: 0, cacheWrite: 0 },
+				},
+			],
+		},
+	};
+}
+
 describe("Anthropic raw SSE parsing", () => {
+	it("keeps signed thinking replayable when a proxy relabels the model", async () => {
+		// Regression for https://github.com/earendil-works/pi/issues/9188.
+		const model = getModel("anthropic", "claude-opus-5");
+		const responseModel = "kimi-for-coding";
+		const context: Context = {
+			messages: [{ role: "user", content: "Hello", timestamp: 1 }],
+		};
+		const first = await streamAnthropic(model, context, {
+			client: createFakeAnthropicClient(
+				createResponseModelSseResponse(responseModel, {
+					type: "thinking",
+					thinking: "reasoning",
+					signature: "signature",
+				}),
+			),
+		}).result();
+
+		expect(first.model).toBe(model.id);
+		expect(first.responseModel).toBe(responseModel);
+
+		const transformed = transformMessages([...context.messages, first], model);
+		const replayedAssistant = transformed.find((message) => message.role === "assistant");
+		expect(replayedAssistant?.content).toEqual([
+			{ type: "thinking", thinking: "reasoning", thinkingSignature: "signature" },
+		]);
+	});
+
+	it("uses a returned fallback model for cost attribution", async () => {
+		const fallbackModel = "fallback-model";
+		const model: Model<"anthropic-messages"> = {
+			...getModel("anthropic", "claude-opus-5"),
+			compat: {
+				allowedFallbackModels: [
+					{
+						provider: "anthropic",
+						model: fallbackModel,
+						cost: { input: 3, output: 5, cacheRead: 0, cacheWrite: 0 },
+					},
+				],
+			},
+		};
+		const result = await streamAnthropic(
+			model,
+			{
+				messages: [{ role: "user", content: "Hello", timestamp: 1 }],
+			},
+			{
+				client: createFakeAnthropicClient(
+					createResponseModelSseResponse(fallbackModel, { type: "text", text: "done" }),
+				),
+			},
+		).result();
+
+		expect(result.model).toBe(model.id);
+		expect(result.responseModel).toBe(fallbackModel);
+		expect(result.usage.cost.input).toBeCloseTo(0.0003, 10);
+		expect(result.usage.cost.output).toBeCloseTo(0.0001, 10);
+	});
+
+	it("uses the serving model from an initial fallback block for cost attribution", async () => {
+		const fallbackModel = "fallback-model";
+		const model = createAllowedFallbackModel(fallbackModel);
+		const result = await streamAnthropic(
+			model,
+			{ messages: [{ role: "user", content: "Hello", timestamp: 1 }] },
+			{ client: createFakeAnthropicClient(createServedFallbackSseResponse(fallbackModel, "block")) },
+		).result();
+
+		expect(result.model).toBe(model.id);
+		expect(result.responseModel).toBe(fallbackModel);
+		expect(result.usage.cost.input).toBeCloseTo(0.0003, 10);
+		expect(result.usage.cost.output).toBeCloseTo(0.0001, 10);
+	});
+
+	it("reprices usage immediately when an initial fallback block precedes stream termination", async () => {
+		const fallbackModel = "fallback-model";
+		const model = createAllowedFallbackModel(fallbackModel);
+		const response = createSseResponse([
+			{
+				event: "message_start",
+				data: JSON.stringify({
+					type: "message_start",
+					message: {
+						id: "msg_fallback_early_end",
+						model: "claude-opus-5",
+						usage: { input_tokens: 100, output_tokens: 20 },
+					},
+				}),
+			},
+			{
+				event: "content_block_start",
+				data: JSON.stringify({
+					type: "content_block_start",
+					index: 0,
+					content_block: {
+						type: "fallback",
+						from: { model: "claude-opus-5" },
+						to: { model: fallbackModel },
+						trigger: { type: "refusal", category: "general_harms" },
+					},
+				}),
+			},
+			{ event: "content_block_stop", data: JSON.stringify({ type: "content_block_stop", index: 0 }) },
+			{ event: "message_stop", data: JSON.stringify({ type: "message_stop" }) },
+		]);
+
+		const result = await streamAnthropic(
+			model,
+			{ messages: [{ role: "user", content: "Hello", timestamp: 1 }] },
+			{ client: createFakeAnthropicClient(response) },
+		).result();
+
+		expect(result.responseModel).toBe(fallbackModel);
+		expect(result.usage.cost.input).toBeCloseTo(0.0003, 10);
+		expect(result.usage.cost.output).toBeCloseTo(0.0001, 10);
+	});
+
+	it("uses the fallback_message iteration model when no boundary block is emitted", async () => {
+		const fallbackModel = "fallback-model";
+		const model = createAllowedFallbackModel(fallbackModel);
+		const result = await streamAnthropic(
+			model,
+			{ messages: [{ role: "user", content: "Hello", timestamp: 1 }] },
+			{ client: createFakeAnthropicClient(createServedFallbackSseResponse(fallbackModel, "iterations")) },
+		).result();
+
+		expect(result.model).toBe(model.id);
+		expect(result.responseModel).toBe(fallbackModel);
+		expect(result.usage.cost.input).toBeCloseTo(0.0003, 10);
+		expect(result.usage.cost.output).toBeCloseTo(0.0001, 10);
+	});
+
+	it("uses the message_start fallback_message iteration model", async () => {
+		const fallbackModel = "fallback-model";
+		const model = createAllowedFallbackModel(fallbackModel);
+		const result = await streamAnthropic(
+			model,
+			{ messages: [{ role: "user", content: "Hello", timestamp: 1 }] },
+			{ client: createFakeAnthropicClient(createServedFallbackSseResponse(fallbackModel, "start-iterations")) },
+		).result();
+
+		expect(result.model).toBe(model.id);
+		expect(result.responseModel).toBe(fallbackModel);
+		expect(result.usage.cost.input).toBeCloseTo(0.0003, 10);
+		expect(result.usage.cost.output).toBeCloseTo(0.0001, 10);
+	});
+
 	it("fails safely when Anthropic falls back after output begins", async () => {
 		const model = getModel("anthropic", "claude-opus-5");
 		const response = createSseResponse([

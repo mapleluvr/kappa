@@ -98,10 +98,6 @@ function getPromptCacheOptions(
 	return undefined;
 }
 
-function formatOpenAIResponsesError(error: unknown): string {
-	return formatProviderError(normalizeProviderError(error), "OpenAI API error");
-}
-
 // OpenAI Responses-specific options
 export interface OpenAIResponsesOptions extends StreamOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
@@ -183,7 +179,8 @@ export const stream: StreamFunction<"openai-responses", OpenAIResponsesOptions> 
 			}
 
 			if (output.stopReason === "pending") {
-				throw new Error("OpenAI Responses stream ended without a stop reason");
+				const providerName = model.provider === "openai" ? "OpenAI" : model.provider;
+				throw new Error(`${providerName} Responses stream ended without a stop reason`);
 			}
 			if (output.stopReason === "aborted" || output.stopReason === "error") {
 				throw new Error(output.errorMessage || "An unknown error occurred");
@@ -199,7 +196,10 @@ export const stream: StreamFunction<"openai-responses", OpenAIResponsesOptions> 
 				delete (block as { customInput?: unknown }).customInput;
 			}
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
-			output.errorMessage = formatOpenAIResponsesError(error);
+			output.errorMessage = formatProviderError(
+				normalizeProviderError(error),
+				`${model.provider === "openai" ? "OpenAI" : model.provider} API error`,
+			);
 			stream.push({ type: "error", reason: output.stopReason, error: output });
 			stream.end();
 		}

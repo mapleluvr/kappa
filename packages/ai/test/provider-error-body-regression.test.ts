@@ -122,6 +122,11 @@ const responsesModel: Model<"openai-responses"> = {
 	maxTokens: 100,
 };
 
+const nonOpenAIResponsesModel: Model<"openai-responses"> = {
+	...responsesModel,
+	provider: "proxy-provider",
+};
+
 async function drainResult(stream: {
 	[Symbol.asyncIterator](): AsyncIterator<unknown>;
 	result(): Promise<{ errorMessage?: string; stopReason?: string }>;
@@ -171,6 +176,13 @@ describe("provider error body passthrough (per-tier regression)", () => {
 		expect(output.errorMessage).toContain("blocked by gateway WAF");
 	});
 
+	it("openai-responses uses the actual provider in its error prefix", async () => {
+		const output = await drainResult(streamOpenAIResponses(nonOpenAIResponsesModel, context, { apiKey: "test" }));
+
+		expect(output.stopReason).toBe("error");
+		expect(output.errorMessage).toContain("proxy-provider API error (403)");
+		expect(output.errorMessage).not.toContain("OpenAI API error (403)");
+	});
 	it("bedrock (body-blind) surfaces the gateway body instead of Unknown: UnknownError", async () => {
 		bedrockMock.sendError = Object.assign(new Error("UnknownError"), {
 			name: "UnknownError",

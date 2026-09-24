@@ -103,6 +103,25 @@ function convertToolResultOutput<TApi extends Api>(
 	return output;
 }
 
+function parseResponseReasoningItem(signature: string): ResponseReasoningItem {
+	try {
+		const parsed: unknown = JSON.parse(signature);
+		if (
+			typeof parsed !== "object" ||
+			parsed === null ||
+			Array.isArray(parsed) ||
+			(parsed as { type?: unknown }).type !== "reasoning" ||
+			typeof (parsed as { id?: unknown }).id !== "string" ||
+			!Array.isArray((parsed as { summary?: unknown }).summary)
+		) {
+			throw new Error("invalid shape");
+		}
+		return parsed as ResponseReasoningItem;
+	} catch {
+		throw new Error("Invalid OpenAI Responses reasoning signature");
+	}
+}
+
 export interface OpenAIResponsesStreamOptions {
 	serviceTier?: ResponseCreateParamsStreaming["service_tier"];
 	grammarToolInputProperties?: ReadonlyMap<string, string>;
@@ -161,9 +180,12 @@ export function convertResponsesMessages<TApi extends Api>(
 		const [callId, itemId] = id.split("|");
 		const normalizedCallId = normalizeIdPart(callId);
 		const isForeignToolCall = source.provider !== model.provider || source.api !== model.api;
-		let normalizedItemId = isForeignToolCall ? buildForeignResponsesItemId(itemId) : normalizeIdPart(itemId);
-		// OpenAI Responses API requires item id to start with "fc"
-		if (!normalizedItemId.startsWith("fc_")) {
+		const isCustomToolItem = itemId.startsWith("ctc_");
+		let normalizedItemId =
+			isForeignToolCall && !isCustomToolItem ? buildForeignResponsesItemId(itemId) : normalizeIdPart(itemId);
+		// OpenAI Responses function_call items require an fc_* id. Custom tool items
+		// use ctc_* ids and must keep that namespace when they are replayed as custom_tool_call.
+		if (!isCustomToolItem && !normalizedItemId.startsWith("fc_")) {
 			normalizedItemId = normalizeIdPart(`fc_${normalizedItemId}`);
 		}
 		return `${normalizedCallId}|${normalizedItemId}`;
@@ -220,7 +242,7 @@ export function convertResponsesMessages<TApi extends Api>(
 			for (const block of msg.content) {
 				if (block.type === "thinking") {
 					if (block.thinkingSignature) {
-						const reasoningItem = JSON.parse(block.thinkingSignature) as ResponseReasoningItem;
+						const reasoningItem = parseResponseReasoningItem(block.thinkingSignature);
 						output.push(reasoningItem);
 					}
 				} else if (block.type === "text") {
@@ -540,7 +562,7 @@ export async function processResponsesStream<TApi extends Api>(
 			const block = reasoningBlocksById.get(item.id);
 			if (!block?.thinkingSignature) continue;
 
-			const storedItem = JSON.parse(block.thinkingSignature) as ResponseReasoningItem;
+			const storedItem = parseResponseReasoningItem(block.thinkingSignature);
 			if (storedItem.encrypted_content) continue;
 			block.thinkingSignature = JSON.stringify({
 				...storedItem,
@@ -756,7 +778,8 @@ export async function processResponsesStream<TApi extends Api>(
 		}
 	}
 	if (!sawTerminalResponseEvent) {
-		throw new Error("OpenAI Responses stream ended before a terminal response event");
+		const providerName = model.provider === "openai" ? "OpenAI" : model.provider;
+		throw new Error(`${providerName} Responses stream ended before a terminal response event`);
 	}
 }
 

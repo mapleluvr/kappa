@@ -1237,21 +1237,24 @@ export function convertMessages(
 					content: sanitizeSurrogates(msg.content),
 				});
 			} else {
-				const content: ChatCompletionContentPart[] = msg.content.map((item): ChatCompletionContentPart => {
-					if (item.type === "text") {
-						return {
-							type: "text",
-							text: sanitizeSurrogates(item.text),
-						} satisfies ChatCompletionContentPartText;
-					} else {
-						return {
-							type: "image_url",
-							image_url: {
-								url: `data:${item.mimeType};base64,${item.data}`,
-							},
-						} satisfies ChatCompletionContentPartImage;
-					}
-				});
+				const hasImage = msg.content.some((item) => item.type === "image");
+				const content: ChatCompletionContentPart[] = msg.content
+					.filter((item) => !hasImage || item.type !== "text" || item.text.length > 0)
+					.map((item): ChatCompletionContentPart => {
+						if (item.type === "text") {
+							return {
+								type: "text",
+								text: sanitizeSurrogates(item.text),
+							} satisfies ChatCompletionContentPartText;
+						} else {
+							return {
+								type: "image_url",
+								image_url: {
+									url: `data:${item.mimeType};base64,${item.data}`,
+								},
+							} satisfies ChatCompletionContentPartImage;
+						}
+					});
 				if (content.length === 0) continue;
 				params.push({
 					role: "user",
@@ -1454,7 +1457,7 @@ export function convertMessages(
 						role: "system",
 						tools: convertTools(deferredTools, compat),
 					};
-					// Kimi accepts a system message with tools but omits the standard content field.
+					// SAFETY: Kimi accepts system messages with tools and no content; the SDK type omits that shape.
 					params.push(kimiToolMessage as unknown as ChatCompletionMessageParam);
 				}
 			}

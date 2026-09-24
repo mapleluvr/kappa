@@ -534,6 +534,21 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 			let client: Anthropic;
 			let isOAuth: boolean;
 			let usageModel = model;
+			const updateUsageModel = (responseModel: string): void => {
+				if (responseModel === model.id) {
+					delete output.responseModel;
+					usageModel = model;
+					calculateCost(usageModel, output.usage);
+					return;
+				}
+
+				output.responseModel = responseModel;
+				const fallbackCost = model.compat?.allowedFallbackModels?.find(
+					(fallback) => fallback.provider === model.provider && fallback.model === responseModel,
+				)?.cost;
+				usageModel = fallbackCost ? { ...model, id: responseModel, cost: fallbackCost } : model;
+				calculateCost(usageModel, output.usage);
+			};
 			let inputTransformations: BetaThinkingDroppedInputTransformation[] | undefined;
 
 			if (options?.client) {
@@ -595,14 +610,8 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 					output.responseId = event.message.id;
 					const transformations = event.message.input_transformations;
 					if (Array.isArray(transformations)) inputTransformations = transformations;
-					output.model = event.message.model;
-					const fallbackCost =
-						output.model === model.id
-							? undefined
-							: model.compat?.allowedFallbackModels?.find(
-									(fallback) => fallback.provider === model.provider && fallback.model === output.model,
-								)?.cost;
-					usageModel = fallbackCost ? { ...model, id: output.model, cost: fallbackCost } : model;
+					const responseModel = event.message.model;
+					updateUsageModel(responseModel);
 					// Capture initial token usage from message_start event
 					// This ensures we have input token counts even if the stream is aborted early
 					output.usage.input = event.message.usage.input_tokens || 0;
@@ -613,12 +622,20 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 					// Anthropic doesn't provide total_tokens, compute from components
 					output.usage.totalTokens =
 						output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
+					let iterationFallbackModel: string | undefined;
+					for (const iteration of event.message.usage.iterations ?? []) {
+						if (iteration.type === "fallback_message") {
+							iterationFallbackModel = iteration.model;
+						}
+					}
+					if (iterationFallbackModel) updateUsageModel(iterationFallbackModel);
 					calculateCost(usageModel, output.usage);
 				} else if (event.type === "content_block_start") {
 					if (event.content_block.type === "fallback") {
 						if (output.content.length > 0) {
 							throw new Error("Anthropic performed an unsupported mid-output model fallback");
 						}
+						updateUsageModel(event.content_block.to.model);
 						continue;
 					}
 					if (event.content_block.type === "text") {
@@ -655,7 +672,7 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 							name: isOAuth
 								? fromClaudeCodeName(event.content_block.name, context.tools)
 								: event.content_block.name,
-							arguments: (event.content_block.input as Record<string, any>) ?? {},
+							arguments: (event.content_block.input as ToolCall["arguments"]) ?? {},
 							partialJson: "",
 							index: event.index,
 						};
@@ -743,6 +760,13 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 				} else if (event.type === "message_delta") {
 					const transformations = event.input_transformations;
 					if (Array.isArray(transformations)) inputTransformations = transformations;
+					let iterationFallbackModel: string | undefined;
+					for (const iteration of event.usage?.iterations ?? []) {
+						if (iteration.type === "fallback_message") {
+							iterationFallbackModel = iteration.model;
+						}
+					}
+					if (iterationFallbackModel) updateUsageModel(iterationFallbackModel);
 					if (event.delta.stop_reason) {
 						output.rawStopReason = event.delta.stop_reason;
 						const stopReasonResult = mapStopReason(event.delta.stop_reason, event.delta.stop_details);

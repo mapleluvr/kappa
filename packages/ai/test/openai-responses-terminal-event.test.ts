@@ -238,6 +238,23 @@ describe("OpenAI Responses terminal event handling", () => {
 		expect(result.errorMessage).toBe("OpenAI Responses stream ended before a terminal response event");
 	});
 
+	it("names the configured provider when the wrapper stream ends before a terminal response event", async () => {
+		const model: Model<"openai-responses"> = {
+			...createModel(),
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+		};
+		const context: Context = {
+			systemPrompt: "",
+			messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: 0 }],
+			tools: [],
+		};
+		const result = await streamOpenAIResponses(model, context, { apiKey: "test" }).result();
+
+		expect(result.stopReason).toBe("error");
+		expect(result.errorMessage).toBe("openrouter Responses stream ended before a terminal response event");
+	});
+
 	it.each([
 		{ phases: ["commentary", "commentary"], expected: ["pending", "pending"] },
 		{ phases: ["final_answer", "final_answer"], expected: ["stop", "stop"] },
