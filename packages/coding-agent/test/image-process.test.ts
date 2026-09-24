@@ -27,6 +27,14 @@ function expectPngMagic(base64Data: string): void {
 }
 
 describe("image processing pipeline", () => {
+	it.each(["GIF87a", "GIF89a"])("detects the complete %s signature", (signature) => {
+		expect(detectSupportedImageMimeType(Buffer.from(signature, "ascii"))).toBe("image/gif");
+	});
+
+	it("rejects incomplete GIF signatures", () => {
+		expect(detectSupportedImageMimeType(Buffer.from("GIF not an image", "ascii"))).toBeNull();
+	});
+
 	it("detects BMP files from magic bytes", () => {
 		expect(detectSupportedImageMimeType(createTinyBmp1x1Red24bpp())).toBe("image/bmp");
 	});
