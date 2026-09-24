@@ -3,8 +3,10 @@ import { readdirSync, statSync } from "fs";
 import { homedir } from "os";
 import { basename, dirname, join } from "path";
 import { fuzzyFilter } from "./fuzzy.ts";
+import { autocompleteBoundaryRegex, autocompleteSeparatorRegex } from "./utils.ts";
 
 const PATH_DELIMITERS = new Set([" ", "\t", '"', "'", "="]);
+const tokenStartRegex = new RegExp(`${autocompleteBoundaryRegex.source}$`, "u");
 
 function toDisplayPath(value: string): string {
 	return value.replace(/\\/g, "/");
@@ -42,14 +44,36 @@ function buildFdPathQuery(query: string): string {
 	return pattern;
 }
 
+function findSlashCommandBoundary(text: string): { commandEnd: number; argumentStart: number } | null {
+	if (!text.startsWith("/")) return null;
+
+	let index = 1;
+	for (const character of text.slice(1)) {
+		if (PATH_DELIMITERS.has(character) || autocompleteSeparatorRegex.test(character)) {
+			return { commandEnd: index, argumentStart: index + character.length };
+		}
+		index += character.length;
+	}
+
+	return null;
+}
+
+export function hasSlashCommandArgument(text: string): boolean {
+	return findSlashCommandBoundary(text.trimStart()) !== null;
+}
+
 function findLastDelimiter(text: string): number {
-	for (let i = text.length - 1; i >= 0; i -= 1) {
-		if (PATH_DELIMITERS.has(text[i] ?? "")) {
-			return i;
+	let lastDelimiter = -1;
+	let index = 0;
+	for (const character of text) {
+		index += character.length;
+		if (PATH_DELIMITERS.has(character) || autocompleteSeparatorRegex.test(character)) {
+			lastDelimiter = index - 1;
 		}
 	}
-	return -1;
+	return lastDelimiter;
 }
+
 
 function findUnclosedQuoteStart(text: string): number | null {
 	let inQuotes = false;
@@ -68,7 +92,7 @@ function findUnclosedQuoteStart(text: string): number | null {
 }
 
 function isTokenStart(text: string, index: number): boolean {
-	return index === 0 || PATH_DELIMITERS.has(text[index - 1] ?? "");
+	return PATH_DELIMITERS.has(text[index - 1] ?? "") || tokenStartRegex.test(text.slice(0, index));
 }
 
 function extractQuotedPrefix(text: string): string | null {
@@ -108,7 +132,7 @@ function buildCompletionValue(
 	path: string,
 	options: { isDirectory: boolean; isAtPrefix: boolean; isQuotedPrefix: boolean },
 ): string {
-	const needsQuotes = options.isQuotedPrefix || path.includes(" ");
+	const needsQuotes = options.isQuotedPrefix || autocompleteSeparatorRegex.test(path);
 	const prefix = options.isAtPrefix ? "@" : "";
 
 	if (!needsQuotes) {
@@ -311,9 +335,9 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		}
 
 		if (!options.force && textBeforeCursor.startsWith("/")) {
-			const spaceIndex = textBeforeCursor.indexOf(" ");
+			const commandBoundary = findSlashCommandBoundary(textBeforeCursor);
 
-			if (spaceIndex === -1) {
+			if (!commandBoundary) {
 				const prefix = textBeforeCursor.slice(1);
 				const commandItems = this.commands.map((cmd) => {
 					const name = "name" in cmd ? cmd.name : cmd.value;
@@ -341,8 +365,8 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				};
 			}
 
-			const commandName = textBeforeCursor.slice(1, spaceIndex);
-			const argumentText = textBeforeCursor.slice(spaceIndex + 1);
+			const commandName = textBeforeCursor.slice(1, commandBoundary.commandEnd);
+			const argumentText = textBeforeCursor.slice(commandBoundary.argumentStart);
 
 			const command = this.commands.find((cmd) => {
 				const name = "name" in cmd ? cmd.name : cmd.value;
@@ -431,7 +455,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 
 		// Check if we're in a slash command context (beforePrefix contains "/command ")
 		const textBeforeCursor = currentLine.slice(0, cursorCol);
-		if (textBeforeCursor.includes("/") && textBeforeCursor.includes(" ")) {
+		if (findSlashCommandBoundary(textBeforeCursor)) {
 			// This is likely a command argument completion
 			const newLine = beforePrefix + item.value + adjustedAfterCursor;
 			const newLines = [...lines];
@@ -499,12 +523,6 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		// For natural triggers, return if it looks like a path, ends with /, starts with ~/, .
 		// Only return empty string if the text looks like it's starting a path context
 		if (pathPrefix.includes("/") || pathPrefix.startsWith(".") || pathPrefix.startsWith("~/")) {
-			return pathPrefix;
-		}
-
-		// Return empty string only after a space (not for completely empty text)
-		// Empty text should not trigger file suggestions - that's for forced Tab completion
-		if (pathPrefix === "" && text.endsWith(" ")) {
 			return pathPrefix;
 		}
 
@@ -683,8 +701,8 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 
 			// Sort directories first, then alphabetically
 			suggestions.sort((a, b) => {
-				const aIsDir = a.value.endsWith("/");
-				const bIsDir = b.value.endsWith("/");
+				const aIsDir = a.label.endsWith("/");
+				const bIsDir = b.label.endsWith("/");
 				if (aIsDir && !bIsDir) return -1;
 				if (!aIsDir && bIsDir) return 1;
 				return a.label.localeCompare(b.label);
@@ -817,7 +835,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		const textBeforeCursor = currentLine.slice(0, cursorCol);
 
 		// Don't trigger if we're typing a slash command at the start of the line
-		if (textBeforeCursor.trim().startsWith("/") && !textBeforeCursor.trim().includes(" ")) {
+		if (textBeforeCursor.trim().startsWith("/") && !hasSlashCommandArgument(textBeforeCursor)) {
 			return false;
 		}
 
