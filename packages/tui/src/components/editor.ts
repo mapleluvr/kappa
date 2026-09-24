@@ -1237,7 +1237,10 @@ export class Editor implements Component, Focusable {
 				}
 			}
 			// Also auto-trigger when typing letters in a slash command or symbol completion context
-			else if (/[a-zA-Z0-9.\-_]/.test(char) || cjkBreakRegex.test(char)) {
+			else if (
+				(/[a-zA-Z0-9.\-_]/.test(char) || cjkBreakRegex.test(char)) &&
+				!autocompleteSeparatorRegex.test(char)
+			) {
 				const currentLine = this.state.lines[this.state.cursorLine] || "";
 				const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
 				// Check if we're in a slash command (with or without space for arguments)

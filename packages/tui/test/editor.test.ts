@@ -2252,6 +2252,34 @@ describe("Editor component", () => {
 			}
 		});
 
+		it("does not open slash argument completion for CJK separators typed as punctuation", async () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const provider = new CombinedAutocompleteProvider(
+				[
+					{
+						name: "search",
+						getArgumentCompletions: (prefix: string) => [{ value: prefix, label: prefix }],
+					},
+				],
+				process.cwd(),
+			);
+			editor.setAutocompleteProvider(provider);
+
+			for (const character of "/search") {
+				editor.handleInput(character);
+				await flushAutocomplete();
+			}
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+			editor.handleInput("\x1b");
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+
+			for (const separator of ["。", "、", "「", "・"]) {
+				editor.handleInput(separator);
+				await flushAutocomplete();
+				assert.strictEqual(editor.isShowingAutocomplete(), false, separator);
+			}
+		});
+
 		it("uses file completion after a slash command with a CJK boundary", async (t) => {
 			const baseDir = mkdtempSync(join(tmpdir(), "pi-editor-slash-cjk-"));
 			t.after(() => rmSync(baseDir, { recursive: true, force: true }));
